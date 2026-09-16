@@ -1,0 +1,8 @@
+# Default backtest execution assumptions.
+execution_model: "next_open"
+slippage_model:
+  name: "fixed_bps"
+  bps: "5"
+fee_model: "cn_a"           # resolved from configs/markets/cn_a.yaml fees
+participation_limit: "0.05" # max fraction of bar volume we may take
+decision_frequency: "daily"

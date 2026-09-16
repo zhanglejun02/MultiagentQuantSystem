@@ -1,0 +1,12 @@
+# Pre-trade risk limits (fixture defaults; tune per account).
+pretrade:
+  max_order_value: "2000000"
+  max_position_weight: "0.35"
+  max_daily_turnover: "1.0"        # of NAV
+  max_active_orders: 50
+  max_price_deviation: "0.08"      # vs latest close
+  max_market_data_staleness_days: 3
+
+runtime:
+  max_daily_loss_pct: "0.05"
+  max_drawdown_pct: "0.20"

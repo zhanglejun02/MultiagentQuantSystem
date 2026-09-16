@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class Exchange(StrEnum):
+    SSE = "SSE"
+    SZSE = "SZSE"
+
+
+class Board(StrEnum):
+    MAIN = "MAIN"
+    STAR = "STAR"
+    CHINEXT = "CHINEXT"
+    BSE = "BSE"
+
+
+class SecurityType(StrEnum):
+    STOCK = "STOCK"
+    ETF = "ETF"
+
+
+class SecurityFlag(StrEnum):
+    NORMAL = "NORMAL"
+    ST = "ST"  # risk warning
+    SUSPENDED = "SUSPENDED"
+    DELISTED = "DELISTED"
+
+
+class OrderSide(StrEnum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+class OrderType(StrEnum):
+    LIMIT = "LIMIT"
+    MARKET = "MARKET"
+
+
+class OrderStatus(StrEnum):
+    CREATED = "CREATED"
+    RISK_APPROVED = "RISK_APPROVED"
+    SUBMITTING = "SUBMITTING"
+    SUBMITTED = "SUBMITTED"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    FILLED = "FILLED"
+    CANCEL_PENDING = "CANCEL_PENDING"
+    CANCELLED = "CANCELLED"
+    REJECTED = "REJECTED"
+
+
+class ArtifactType(StrEnum):
+    DATA_SNAPSHOT = "DATA_SNAPSHOT"
+    UNIVERSE = "UNIVERSE"
+    FEATURE_SET = "FEATURE_SET"
+    MODEL = "MODEL"
+    SIGNAL = "SIGNAL"
+    PORTFOLIO_TARGET = "PORTFOLIO_TARGET"
+    BACKTEST_SPEC = "BACKTEST_SPEC"
+    BACKTEST_RESULT = "BACKTEST_RESULT"
+    VALIDATION_REPORT = "VALIDATION_REPORT"
+    STRATEGY_PACKAGE = "STRATEGY_PACKAGE"
+    DEPLOYMENT = "DEPLOYMENT"
+    DEPLOYMENT_PROPOSAL = "DEPLOYMENT_PROPOSAL"
+    RESEARCH_REPORT = "RESEARCH_REPORT"
+
+
+class ArtifactStatus(StrEnum):
+    REGISTERED = "REGISTERED"
+    VERIFIED = "VERIFIED"
+    DEPRECATED = "DEPRECATED"
+    FAILED = "FAILED"
+
+
+class ExperimentState(StrEnum):
+    IDEA = "IDEA"
+    PROPOSED = "PROPOSED"
+    SPEC_READY = "SPEC_READY"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    VALIDATING = "VALIDATING"
+    CANDIDATE = "CANDIDATE"
+    PAPER_TRADING = "PAPER_TRADING"
+    LIVE_CANARY = "LIVE_CANARY"
+    LIVE = "LIVE"
+    SUSPENDED = "SUSPENDED"
+    REJECTED = "REJECTED"
+    RETIRED = "RETIRED"
+
+
+class FactorState(StrEnum):
+    DRAFT = "DRAFT"
+    VALIDATED = "VALIDATED"
+    APPROVED = "APPROVED"
+    ACTIVE = "ACTIVE"
+    DEPRECATED = "DEPRECATED"
+
+
+class TradingRuntimeState(StrEnum):
+    RUNNING = "RUNNING"
+    SAFE_MODE = "SAFE_MODE"
+    KILLED = "KILLED"
+
+
+class MismatchKind(StrEnum):
+    UNKNOWN_POSITION = "UNKNOWN_POSITION"
+    UNKNOWN_ORDER = "UNKNOWN_ORDER"
+    CASH_MISMATCH = "CASH_MISMATCH"
+    POSITION_MISMATCH = "POSITION_MISMATCH"
+    TRADE_MISMATCH = "TRADE_MISMATCH"

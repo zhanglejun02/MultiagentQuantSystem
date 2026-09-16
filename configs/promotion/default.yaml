@@ -1,0 +1,17 @@
+# Promotion thresholds are configuration, not code. These are placeholders for
+# the fixture environment and are NOT universal "good strategy" thresholds.
+hard_gates:
+  - pit_violation
+  - survivorship_bias
+  - data_leakage
+  - unreproducible_result
+  - invalid_cost_config
+  - invalid_execution_assumptions
+  - market_rule_violation
+  - critical_risk_violation
+  - broken_artifact_lineage
+
+scorecard_thresholds:
+  min_sharpe: "0.0"
+  max_drawdown: "0.60"
+  min_fill_ratio: "0.50"

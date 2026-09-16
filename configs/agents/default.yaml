@@ -1,0 +1,45 @@
+# API keys are environment variable names, never literal secrets.
+providers:
+  kimi:
+    kind: openai_compatible
+    api_key_env: MOONSHOT_API_KEY
+    base_url: https://api.moonshot.cn/v1
+    timeout_seconds: 120
+
+  deepseek:
+    kind: openai_compatible
+    api_key_env: DEEPSEEK_API_KEY
+    base_url: https://api.deepseek.com
+    timeout_seconds: 120
+
+# Each role may use a different provider and model.
+roles:
+  researcher:
+    provider: kimi
+    model: kimi-k3
+    temperature: 1.0
+    max_output_tokens: 4096
+
+  critic:
+    provider: deepseek
+    model: deepseek-reasoner
+    temperature: 0.1
+    max_output_tokens: 4096
+
+  statistician:
+    provider: deepseek
+    model: deepseek-chat
+    temperature: 0.0
+    max_output_tokens: 4096
+
+  orchestrator:
+    provider: kimi
+    model: kimi-k3
+    temperature: 1.0
+    max_output_tokens: 4096
+
+research_budget:
+  max_candidates_per_run: 100
+  max_llm_calls_per_run: 30
+  max_total_tokens_per_run: 200000
+  max_cost_usd_per_run: 20.0

@@ -1,0 +1,95 @@
+# A-share market rulebook configuration. Effective-dated; the engine must never
+# hardcode these numbers. This file does NOT claim regulatory completeness.
+rulebook_version: "cn_a-2026.2"
+source_metadata:
+  scope: "fixture-grade regression rules; not a complete regulatory history"
+  source: "project-maintained test policy"
+  verified_at: "2026-09-15"
+timezone: "Asia/Shanghai"
+
+sessions:
+  - ["09:30", "11:30"]
+  - ["13:00", "15:00"]
+auction:
+  open: ["09:15", "09:25"]
+  close: ["14:57", "15:00"]
+
+t_plus_sell: 1  # shares bought on T are sellable on T+1
+
+boards:
+  MAIN:
+    tick_size: "0.01"
+    lot_size: 100
+    price_limit: "0.10"
+    st_price_limit: "0.05"
+    ipo_no_limit_days: 5
+    order_types: ["LIMIT", "MARKET"]
+  STAR:
+    tick_size: "0.01"
+    lot_size: 100
+    price_limit: "0.20"
+    st_price_limit: "0.20"
+    ipo_no_limit_days: 5
+    order_types: ["LIMIT", "MARKET"]
+  CHINEXT:
+    tick_size: "0.01"
+    lot_size: 100
+    price_limit: "0.20"
+    st_price_limit: "0.20"
+    ipo_no_limit_days: 5
+    order_types: ["LIMIT", "MARKET"]
+
+rule_versions:
+  - rule_version: "main-normal-2023.1"
+    exchange: ["SSE", "SZSE"]
+    board: "MAIN"
+    security_type: "STOCK"
+    security_status: "NORMAL"
+    effective_from: "2023-08-28"
+    effective_to: null
+    price_limit: "0.10"
+    source: "fixture policy: main-board normal stock"
+  - rule_version: "main-st-2023.1"
+    exchange: ["SSE", "SZSE"]
+    board: "MAIN"
+    security_type: "STOCK"
+    security_status: "ST"
+    effective_from: "2023-08-28"
+    effective_to: "2026-07-05"
+    price_limit: "0.05"
+    source: "fixture policy: pre-change risk-warning regression"
+  - rule_version: "main-st-2026.2"
+    exchange: ["SSE", "SZSE"]
+    board: "MAIN"
+    security_type: "STOCK"
+    security_status: "ST"
+    effective_from: "2026-07-06"
+    effective_to: null
+    price_limit: "0.10"
+    source: "fixture policy: post-change risk-warning regression"
+  - rule_version: "star-normal-2023.1"
+    exchange: ["SSE"]
+    board: "STAR"
+    security_type: "STOCK"
+    security_status: ["NORMAL", "ST"]
+    effective_from: "2023-08-28"
+    effective_to: null
+    price_limit: "0.20"
+    source: "fixture policy: STAR stock"
+  - rule_version: "chinext-normal-2023.1"
+    exchange: ["SZSE"]
+    board: "CHINEXT"
+    security_type: "STOCK"
+    security_status: ["NORMAL", "ST"]
+    effective_from: "2023-08-28"
+    effective_to: null
+    price_limit: "0.20"
+    source: "fixture policy: ChiNext stock"
+# Fee/tax schedule, versioned by effective date. Values are examples for the
+# fixture environment; update via config, never in code.
+fees:
+  - effective_from: "2023-08-28"
+    commission_rate: "0.00025"
+    min_commission: "5"
+    stamp_tax_sell_rate: "0.0005"
+    transfer_fee_rate: "0.00001"

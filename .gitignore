@@ -1,0 +1,37 @@
+# Python environments and caches
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Test and build output
+.coverage
+coverage.xml
+htmlcov/
+dist/
+.vite/
+
+# Local runtime data
+var/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Frontend dependencies
+node_modules/
+
+# OS and editor files
+.DS_Store
+.idea/
+
+# Secrets and private credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12

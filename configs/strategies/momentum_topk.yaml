@@ -1,0 +1,7 @@
+# Example strategy configuration. NOT presented as profitable; exists to
+# exercise the framework end to end.
+strategy_id: "momentum_topk"
+params:
+  lookback_days: 20
+  top_k: 3
+  exclude_st: true
