@@ -22,7 +22,7 @@ import {
   api,
   fmt,
 } from "../api";
-import Chart from "../components/Chart";
+import Chart, { areaGradient, chartColors } from "../components/Chart";
 import DataTable, { Column } from "../components/DataTable";
 import StatCard from "../components/StatCard";
 import { useAsync } from "../hooks";
@@ -241,8 +241,7 @@ export default function Factors() {
         </div>
         <div className="lab-title-actions">
           <button className="primary lab-run" onClick={() => setView("explorer")}><Play size={15} /> 打开 Explorer</button>
-          <div className="lab-character" aria-hidden="true">
-            <span>✦</span>
+          <div className="lab-brand-mark" aria-hidden="true">
             <img src="/characters/gengar.png" alt="" />
           </div>
         </div>
@@ -339,9 +338,9 @@ function FactorReport({ run, onRegister }: { run: FactorRun; onRegister: () => v
       <StatCard label="Top 组换手" value={fmt.pct(numberMetric(metrics, "turnover"))} />
     </div>
     <div className="grid cols-2 report-charts">
-      <div className="panel"><h2>IC 时序</h2><Chart height={230} option={{ tooltip: { trigger: "axis" }, grid: { left: 54, right: 16, top: 18, bottom: 30 }, xAxis: { type: "category", data: run.ic_series.map((point) => point.date) }, yAxis: { type: "value" }, series: [{ type: "line", data: run.ic_series.map((point) => point.ic), showSymbol: false, itemStyle: { color: "#7c3aed" }, areaStyle: { opacity: 0.08 } }] }} /></div>
+      <div className="panel"><h2>IC 时序</h2><Chart height={230} option={{ tooltip: { trigger: "axis" }, grid: { left: 54, right: 16, top: 18, bottom: 30 }, xAxis: { type: "category", data: run.ic_series.map((point) => point.date), boundaryGap: false }, yAxis: { type: "value" }, series: [{ type: "line", data: run.ic_series.map((point) => point.ic), showSymbol: false, itemStyle: { color: chartColors.purple }, areaStyle: { color: areaGradient(chartColors.purple, 0.2) }, markLine: { silent: true, symbol: "none", lineStyle: { color: "#cbbdce", width: 1 }, data: [{ yAxis: 0 }] } }] }} /></div>
       <div className="panel"><h2>五分位收益</h2><Chart height={230} option={{ tooltip: {}, grid: { left: 54, right: 16, top: 18, bottom: 30 }, xAxis: { type: "category", data: quantiles.map(([key]) => key) }, yAxis: { type: "value", axisLabel: { formatter: (value: number) => `${(value * 100).toFixed(1)}%` } }, series: [{ type: "bar", data: quantiles.map(([, value]) => value), itemStyle: { color: "#e84d9b" } }] }} /></div>
-      <div className="panel"><h2>IC 衰减</h2><Chart height={210} option={{ tooltip: { trigger: "axis" }, grid: { left: 54, right: 16, top: 18, bottom: 30 }, xAxis: { type: "category", data: run.decay.map((point) => `${point.horizon}D`) }, yAxis: { type: "value" }, series: [{ type: "line", data: run.decay.map((point) => point.rank_ic), itemStyle: { color: "#e84d9b" } }] }} /></div>
+      <div className="panel"><h2>IC 衰减</h2><Chart height={210} option={{ tooltip: { trigger: "axis" }, grid: { left: 54, right: 16, top: 18, bottom: 30 }, xAxis: { type: "category", data: run.decay.map((point) => `${point.horizon}D`), boundaryGap: false }, yAxis: { type: "value" }, series: [{ type: "line", data: run.decay.map((point) => point.rank_ic), itemStyle: { color: chartColors.pink }, lineStyle: { width: 2.4 }, areaStyle: { color: areaGradient(chartColors.pink, 0.18) }, markLine: { silent: true, symbol: "none", lineStyle: { color: "#cbbdce", width: 1 }, data: [{ yAxis: 0 }] } }] }} /></div>
       <div className="panel"><h2>年度稳定性</h2><Chart height={210} option={{ tooltip: {}, grid: { left: 54, right: 16, top: 18, bottom: 30 }, xAxis: { type: "category", data: Object.keys(run.yearly_ic) }, yAxis: { type: "value" }, series: [{ type: "bar", data: Object.values(run.yearly_ic), itemStyle: { color: "#8b5cf6" } }] }} /></div>
     </div>
   </section>;

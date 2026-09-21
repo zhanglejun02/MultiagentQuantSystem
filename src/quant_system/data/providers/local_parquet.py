@@ -92,7 +92,14 @@ class LocalParquetProvider:
     # -- ReferenceDataProvider ------------------------------------------------
     def get_securities(self, *, as_of: datetime) -> list[SecurityMaster]:
         require_aware(as_of, "as_of")
-        return [s for s in self._load_securities() if s.available_at <= as_of]
+        versions: dict[str, SecurityMaster] = {}
+        for security in self._load_securities():
+            if security.available_at > as_of:
+                continue
+            current = versions.get(security.symbol)
+            if current is None or security.available_at > current.available_at:
+                versions[security.symbol] = security
+        return sorted(versions.values(), key=lambda security: security.symbol)
 
     def get_status_intervals(self, *, as_of: datetime) -> list[StatusInterval]:
         require_aware(as_of, "as_of")

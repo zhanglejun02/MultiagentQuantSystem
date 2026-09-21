@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 
 from quant_system.artifacts.lineage import ArtifactLineageService
 from quant_system.artifacts.registry import ArtifactRegistry
+from quant_system.artifacts.store import LocalArtifactStore
 from quant_system.data.providers.local_parquet import LocalParquetProvider
 from quant_system.domain.enums import ArtifactType, ExperimentState, FactorState
 from quant_system.domain.exceptions import (
@@ -24,8 +26,19 @@ from quant_system.domain.exceptions import (
     InvalidTransitionError,
     QuantSystemError,
 )
-from quant_system.domain.types import utc_now
+from quant_system.domain.types import new_id, utc_now
 from quant_system.factors.evaluation import FactorLab
+from quant_system.futures.backtest import FuturesBacktestEngine, FuturesBacktestRequest
+from quant_system.futures.contracts import FuturesContractCatalog
+from quant_system.futures.data import FixtureFuturesData
+from quant_system.futures.domain import (
+    Direction,
+    FuturesOrderIntent,
+    FuturesOrderType,
+    Offset,
+)
+from quant_system.futures.repository import FuturesSimulationRepository
+from quant_system.futures.service import FuturesSimulationService
 from quant_system.infra.db import create_all, make_engine, make_session_factory
 from quant_system.infra.settings import Settings
 from quant_system.research.experiments import ExperimentService
@@ -73,6 +86,22 @@ class FactorEvaluateRequest(BaseModel):
     horizon: int = 1
 
 
+class FuturesSimulationCreate(BaseModel):
+    name: str = "期货仿真"
+    initial_balance: Decimal = Decimal("100000")
+    mode: str = "PAPER"
+
+
+class FuturesOrderCreate(BaseModel):
+    client_order_id: str | None = None
+    symbol: str
+    direction: Direction
+    offset: Offset
+    quantity: int
+    order_type: FuturesOrderType = FuturesOrderType.MARKET
+    limit_price: Decimal | None = None
+
+
 def _run_dir(uri: str) -> Path:
     if not uri.startswith("file://"):
         raise HTTPException(404, f"unsupported artifact uri {uri}")
@@ -108,6 +137,22 @@ def create_app(settings: Settings | None = None, *, init_schema: bool = False) -
     factor_lab = FactorLab(session_factory, LocalParquetProvider(settings.fixtures_root))
     kill_switch = KillSwitch()
     runtime = TradingRuntime(kill_switch)
+    futures_repository = FuturesSimulationRepository(session_factory)
+    futures_catalog = FuturesContractCatalog.from_yaml(
+        Path(settings.configs_root) / "futures" / "contracts.yaml"
+    )
+    futures = FuturesSimulationService(
+        futures_repository,
+        futures_catalog,
+        FixtureFuturesData(),
+        kill_switch,
+    )
+    futures_backtest_engine = FuturesBacktestEngine(
+        catalog=futures_catalog,
+        data=FixtureFuturesData(),
+        store=LocalArtifactStore(settings.artifacts_root),
+        registry=registry,
+    )
 
     app = FastAPI(title="quant-system", version="0.1.0")
     app.add_middleware(
@@ -293,6 +338,110 @@ def create_app(settings: Settings | None = None, *, init_schema: bool = False) -
         doc["source_artifact_id"] = latest.artifact_id
         return doc
 
+    # -- futures paper simulation --------------------------------------------
+    def _futures_call(callable_, *args, **kwargs):
+        try:
+            return callable_(*args, **kwargs)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/futures/contracts")
+    def futures_contracts() -> list[dict]:
+        return futures.contracts()
+
+    @app.get("/api/futures/backtests")
+    def list_futures_backtests() -> list[dict]:
+        envs = registry.find_by_type(ArtifactType.FUTURES_BACKTEST_RESULT)
+        return sorted(
+            (_env_to_dict(envelope) for envelope in envs),
+            key=lambda item: item["created_at"],
+            reverse=True,
+        )
+
+    @app.post("/api/futures/backtests", status_code=201)
+    def run_futures_backtest(body: FuturesBacktestRequest) -> dict:
+        return _futures_call(futures_backtest_engine.run, body).model_dump(mode="json")
+
+    def _futures_backtest_dir(artifact_id: str) -> Path:
+        try:
+            envelope = registry.get(artifact_id)
+        except ArtifactNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        if envelope.artifact_type != ArtifactType.FUTURES_BACKTEST_RESULT:
+            raise HTTPException(400, f"{artifact_id} is not a futures backtest result")
+        return _run_dir(envelope.uri)
+
+    @app.get("/api/futures/backtests/{artifact_id}/metrics")
+    def futures_backtest_metrics(artifact_id: str) -> dict:
+        return json.loads((_futures_backtest_dir(artifact_id) / "metrics.json").read_text())
+
+    @app.get("/api/futures/backtests/{artifact_id}/equity")
+    def futures_backtest_equity(artifact_id: str) -> list[dict]:
+        lines = (_futures_backtest_dir(artifact_id) / "equity_curve.csv").read_text().splitlines()
+        header = lines[0].split(",")
+        return [dict(zip(header, line.split(","), strict=True)) for line in lines[1:]]
+
+    @app.get("/api/futures/simulations")
+    def futures_simulations() -> list[dict]:
+        return futures.list_simulations()
+
+    @app.post("/api/futures/simulations", status_code=201)
+    def create_futures_simulation(body: FuturesSimulationCreate) -> dict:
+        return _futures_call(
+            futures.create,
+            name=body.name,
+            initial_balance=body.initial_balance,
+            mode=body.mode,
+        )
+
+    @app.get("/api/futures/simulations/{simulation_id}")
+    def futures_snapshot(simulation_id: str) -> dict:
+        return _futures_call(futures.snapshot, simulation_id)
+
+    @app.get("/api/futures/simulations/{simulation_id}/positions")
+    def futures_positions(simulation_id: str) -> list[dict]:
+        return _futures_call(futures.snapshot, simulation_id)["positions"]
+
+    @app.get("/api/futures/simulations/{simulation_id}/orders")
+    def futures_orders(simulation_id: str) -> list[dict]:
+        return _futures_call(futures.orders, simulation_id)
+
+    @app.get("/api/futures/simulations/{simulation_id}/trades")
+    def futures_trades(simulation_id: str) -> list[dict]:
+        return _futures_call(futures.trades, simulation_id)
+
+    @app.get("/api/futures/simulations/{simulation_id}/settlements")
+    def futures_settlements(simulation_id: str) -> list[dict]:
+        return _futures_call(futures.settlements, simulation_id)
+
+    @app.get("/api/futures/simulations/{simulation_id}/events")
+    def futures_events(simulation_id: str) -> list[dict]:
+        return _futures_call(futures.events, simulation_id)
+
+    @app.post("/api/futures/simulations/{simulation_id}/orders", status_code=201)
+    def submit_futures_order(simulation_id: str, body: FuturesOrderCreate) -> dict:
+        intent = FuturesOrderIntent(
+            client_order_id=body.client_order_id or new_id("fcmd_"),
+            symbol=body.symbol,
+            direction=body.direction,
+            offset=body.offset,
+            quantity=body.quantity,
+            order_type=body.order_type,
+            limit_price=body.limit_price,
+            created_at=utc_now(),
+        )
+        return _futures_call(futures.submit_order, simulation_id, intent)
+
+    @app.post("/api/futures/simulations/{simulation_id}/orders/{order_id}/cancel")
+    def cancel_futures_order(simulation_id: str, order_id: str) -> dict:
+        return _futures_call(futures.cancel_order, simulation_id, order_id)
+
+    @app.post("/api/futures/simulations/{simulation_id}/advance")
+    def advance_futures_simulation(simulation_id: str) -> dict:
+        return _futures_call(futures.advance, simulation_id)
+
     # -- system / risk ---------------------------------------------------------
     @app.get("/api/system/status")
     def system_status() -> dict:
@@ -305,6 +454,11 @@ def create_app(settings: Settings | None = None, *, init_schema: bool = False) -
             "safe_mode_reason": runtime.safe_mode_reason,
             "n_data_snapshots": len(snapshots),
             "n_backtest_results": len(results),
+            "n_futures_simulations": len(futures.list_simulations()),
+            "n_futures_backtests": len(
+                registry.find_by_type(ArtifactType.FUTURES_BACKTEST_RESULT)
+            ),
+            "futures_gateway": "LOCAL_PAPER",
             "paper_broker": "SIMULATED",
             "oms": "IDLE",
             "heartbeat": utc_now().isoformat(),

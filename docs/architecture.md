@@ -19,6 +19,10 @@
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
+股票与期货是两个独立 bounded context。二者共享 Artifact、数据库、API 和全局
+KillSwitch，但不共享订单、持仓、账本、风控或回放模型。期货的多空、开平、今昨仓、
+保证金和逐日盯市不会进入 A 股 T+1 现金账户。
+
 ## 模块边界
 
 | 模块 | 职责 | 依赖 |
@@ -30,6 +34,7 @@
 | `backtest` | 事件驱动引擎、时钟、Feed、Exchange、Fill/Slippage/Fee、Ledger、EventStore、Replay | domain, rules, data, risk, execution |
 | `risk` | PreTradeRiskEngine（插件规则）、RuntimeRiskMonitor、KillSwitch | domain |
 | `execution` | OMS 状态机、BrokerGateway 协议、PaperBroker、Reconciliation | domain, risk |
+| `futures` | 期货合约、双向持仓、保证金账本、Paper 仿真、回测、事件回放和 Gateway 端口 | artifacts, infra, risk |
 | `research` | Experiment 状态机、Scorecard、PromotionPolicy | domain, artifacts |
 | `agents` | ToolCall/ToolResult 协议、研究工具集 | research, artifacts, backtest |
 | `api` | FastAPI 只读查询 + 少量控制端点 | 以上全部（组合根） |
@@ -47,6 +52,7 @@ Day T+1:      generate orders → pretrade risk → PaperBroker/ExchangeSim
 ## 持久化
 
 - **PostgreSQL**（可降级 SQLite）：artifact 元数据、实验状态、订单/成交记录。SQLAlchemy Core/ORM + Alembic。
+- **期货事件日志**：`futures_events` 是仿真账户的权威记录；`futures_simulations.snapshot` 是同事务更新的读取快照，加载时校验 hash chain 和事件头。
 - **Parquet + PyArrow + DuckDB**：研究数据（行情、特征），PIT 字段随行存储。
 - **本地文件系统 ArtifactStore**：内容按 `content_hash` 校验；接口可换 S3/MinIO。
 

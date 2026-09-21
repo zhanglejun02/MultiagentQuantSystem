@@ -36,6 +36,8 @@ ReconciliationService 比对券商侧（账户/持仓/订单/成交）与内部�
 
 ## 当前范围限制
 
-- 仅 PaperBroker，无真实券商适配器。
-- 日频、long-only、现金账户、无融资融券。
+- 仅本地 PaperBroker，无真实券商、vn.py 或 CTP 适配器。
+- A 股为日频、long-only、现金账户、无融资融券。
+- 期货为日线 fixture 仿真，支持多空、开平、今昨仓、保证金和逐日盯市；不支持真实行情、自动换月、分钟/Tick 撮合或实盘下单。
+- `/api/futures` 创建接口只接受 `mode=PAPER`。未来 CTP 凭据只能通过未提交的环境变量注入，不能进入配置文件、Artifact 或事件 payload。
 - MarketRuleBook 覆盖已测试场景（涨跌停/ST/停牌/T+1/手数等），**不声称法规完备**；规则以带生效日期的配置维护，可更新而不改引擎。

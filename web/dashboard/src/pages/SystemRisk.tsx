@@ -56,6 +56,9 @@ export default function SystemRisk() {
         <StatCard label="数据库" value={health?.db ?? "…"} tone={health?.db === "ok" ? "ok" : "warn"} />
         <StatCard label="数据快照数" value={String(status?.n_data_snapshots ?? "-")} />
         <StatCard label="回测结果数" value={String(status?.n_backtest_results ?? "-")} />
+        <StatCard label="期货仿真数" value={String(status?.n_futures_simulations ?? "-")} />
+        <StatCard label="期货回测数" value={String(status?.n_futures_backtests ?? "-")} />
+        <StatCard label="期货 Gateway" value={status?.futures_gateway ?? "…"} />
       </div>
 
       <h2>状态详情</h2>

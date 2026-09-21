@@ -139,3 +139,36 @@ class FactorRunRow(Base):
     decay: Mapped[list] = mapped_column(JSON, default=list)
     yearly_ic: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class FuturesSimulationRow(Base):
+    __tablename__ = "futures_simulations"
+
+    simulation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    mode: Mapped[str] = mapped_column(String(20), index=True)
+    status: Mapped[str] = mapped_column(String(30), index=True)
+    initial_balance: Mapped[str] = mapped_column(String(50))
+    current_trading_day: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    last_event_seq: Mapped[int] = mapped_column(Integer)
+    last_event_hash: Mapped[str] = mapped_column(String(64))
+    snapshot: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class FuturesEventRow(Base):
+    __tablename__ = "futures_events"
+
+    simulation_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("futures_simulations.simulation_id"), primary_key=True
+    )
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(20))
+    event_type: Mapped[str] = mapped_column(String(50), index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict] = mapped_column(JSON)
+    previous_event_hash: Mapped[str] = mapped_column(String(64))
+    event_hash: Mapped[str] = mapped_column(String(64), unique=True)
+
+    __table_args__ = (Index("ix_futures_events_simulation_seq", "simulation_id", "seq"),)

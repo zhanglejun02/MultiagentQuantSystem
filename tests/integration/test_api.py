@@ -131,3 +131,82 @@ def test_system_status_and_killswitch(client):
     assert c.get("/api/system/status").json()["kill_switch"] is True
     c.post("/api/system/killswitch", params={"engage": False, "operator": "tester"})
     assert c.get("/api/system/status").json()["kill_switch"] is False
+
+
+def test_futures_paper_simulation_flow(client):
+    c, _ = client
+    contracts = c.get("/api/futures/contracts")
+    assert contracts.status_code == 200
+    assert {item["symbol"] for item in contracts.json()} == {
+        "rb2701.SHFE", "m2701.DCE", "MA701.CZCE"
+    }
+
+    created = c.post("/api/futures/simulations", json={
+        "name": "API futures test",
+        "initial_balance": "100000",
+        "mode": "PAPER",
+    })
+    assert created.status_code == 201
+    simulation_id = created.json()["simulation_id"]
+    order = c.post(f"/api/futures/simulations/{simulation_id}/orders", json={
+        "client_order_id": "api-open-rb",
+        "symbol": "rb2701.SHFE",
+        "direction": "LONG",
+        "offset": "OPEN",
+        "quantity": 2,
+        "order_type": "MARKET",
+    })
+    assert order.status_code == 201
+    assert order.json()["status"] == "ACCEPTED"
+
+    advanced = c.post(f"/api/futures/simulations/{simulation_id}/advance")
+    assert advanced.status_code == 200
+    assert advanced.json()["trade_count"] == 1
+    assert advanced.json()["positions"][0]["long_yesterday"] == 2
+    assert len(c.get(f"/api/futures/simulations/{simulation_id}/trades").json()) == 1
+    assert len(c.get(f"/api/futures/simulations/{simulation_id}/events").json()) == 3
+
+
+def test_futures_api_rejects_live_mode_and_respects_killswitch(client):
+    c, _ = client
+    live = c.post("/api/futures/simulations", json={
+        "name": "must fail", "initial_balance": "100000", "mode": "LIVE"
+    })
+    assert live.status_code == 409
+
+    simulation = c.post("/api/futures/simulations", json={
+        "name": "kill test", "initial_balance": "100000"
+    }).json()
+    c.post("/api/system/killswitch", params={"engage": True, "reason": "test"})
+    order = c.post(f"/api/futures/simulations/{simulation['simulation_id']}/orders", json={
+        "symbol": "m2701.DCE",
+        "direction": "SHORT",
+        "offset": "OPEN",
+        "quantity": 1,
+    })
+    assert order.status_code == 201
+    assert order.json()["status"] == "REJECTED"
+    assert "KillSwitch" in order.json()["reject_reason"]
+
+
+def test_futures_backtest_api_uses_distinct_artifacts(client):
+    c, _ = client
+    response = c.post("/api/futures/backtests", json={
+        "symbol": "rb2701.SHFE",
+        "initial_balance": "100000",
+        "lots": 2,
+        "fast_window": 2,
+        "slow_window": 3,
+    })
+    assert response.status_code == 201
+    result = response.json()
+    assert result["metrics"]["trade_count"] > 0
+
+    listed = c.get("/api/futures/backtests").json()
+    assert listed[0]["artifact_id"] == result["result_artifact_id"]
+    assert listed[0]["artifact_type"] == "FUTURES_BACKTEST_RESULT"
+    metrics = c.get(
+        f"/api/futures/backtests/{result['result_artifact_id']}/metrics"
+    )
+    assert metrics.status_code == 200
+    assert metrics.json()["final_equity"] == result["metrics"]["final_equity"]

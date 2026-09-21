@@ -1,5 +1,5 @@
 import { api, fmt } from "../api";
-import Chart from "../components/Chart";
+import Chart, { areaGradient, chartColors } from "../components/Chart";
 import StatCard from "../components/StatCard";
 import { equityDerived, useAsync, useBacktestSelection } from "../hooks";
 
@@ -72,18 +72,22 @@ export default function Backtest() {
               { left: 70, right: 20, top: 270, height: 70 },
             ],
             xAxis: [
-              { type: "category", data: dates, gridIndex: 0, show: false },
-              { type: "category", data: dates, gridIndex: 1 },
+              { type: "category", data: dates, gridIndex: 0, show: false, boundaryGap: false },
+              { type: "category", data: dates, gridIndex: 1, boundaryGap: false },
             ],
             yAxis: [
               { type: "value", scale: true, gridIndex: 0 },
               { type: "value", gridIndex: 1, axisLabel: { formatter: (v: number) => (v * 100).toFixed(0) + "%" } },
             ],
             series: [
-              { name: "NAV", type: "line", data: navs, showSymbol: false, xAxisIndex: 0, yAxisIndex: 0 },
+              {
+                name: "NAV", type: "line", data: navs, showSymbol: false, xAxisIndex: 0, yAxisIndex: 0,
+                itemStyle: { color: chartColors.purple }, areaStyle: { color: areaGradient(chartColors.purple, 0.18) },
+              },
               {
                 name: "Drawdown", type: "line", data: dd, showSymbol: false,
-                xAxisIndex: 1, yAxisIndex: 1, areaStyle: { opacity: 0.3 }, itemStyle: { color: "#e05a5a" },
+                xAxisIndex: 1, yAxisIndex: 1, areaStyle: { color: areaGradient(chartColors.red, 0.3) },
+                itemStyle: { color: chartColors.red },
               },
             ],
           }}

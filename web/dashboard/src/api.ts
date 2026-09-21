@@ -106,9 +106,155 @@ export interface SystemStatus {
   safe_mode_reason: string | null;
   n_data_snapshots: number;
   n_backtest_results: number;
+  n_futures_simulations: number;
+  n_futures_backtests: number;
+  futures_gateway: string;
   paper_broker: string;
   oms: string;
   heartbeat: string;
+}
+
+export interface FuturesContract {
+  symbol: string;
+  name: string;
+  exchange: string;
+  product: string;
+  multiplier: string;
+  price_tick: string;
+  long_margin_rate: string;
+  short_margin_rate: string;
+  open_fee_per_lot: string;
+  close_fee_per_lot: string;
+  close_today_fee_per_lot: string;
+  last_trading_day: string | null;
+  catalog_version: string;
+}
+
+export interface FuturesSimulationSummary {
+  simulation_id: string;
+  name: string;
+  mode: "PAPER";
+  status: string;
+  initial_balance: string;
+  current_trading_day: string | null;
+  last_event_seq: number;
+  last_event_hash: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FuturesAccount {
+  balance: string;
+  equity: string;
+  available: string;
+  margin: string;
+  frozen_margin: string;
+  unrealized_pnl: string;
+  realized_pnl: string;
+  fees: string;
+  risk_ratio: string;
+}
+
+export interface FuturesPosition {
+  symbol: string;
+  long_today: number;
+  long_yesterday: number;
+  short_today: number;
+  short_yesterday: number;
+  long_settlement_price: string;
+  short_settlement_price: string;
+}
+
+export interface FuturesSnapshot {
+  simulation_id: string;
+  name: string;
+  mode: "PAPER";
+  status: string;
+  current_trading_day: string | null;
+  next_trading_day: string | null;
+  account: FuturesAccount;
+  marks: Record<string, string>;
+  positions: FuturesPosition[];
+  order_count: number;
+  trade_count: number;
+  settlement_count: number;
+  last_event_seq: number;
+  last_event_hash: string;
+  updated_at: string;
+}
+
+export interface FuturesOrder {
+  order_id: string;
+  client_order_id: string;
+  symbol: string;
+  direction: "LONG" | "SHORT";
+  offset: "OPEN" | "CLOSE" | "CLOSE_TODAY" | "CLOSE_YESTERDAY";
+  quantity: number;
+  order_type: "MARKET" | "LIMIT";
+  limit_price: string | null;
+  status: string;
+  filled_quantity: number;
+  average_fill_price: string | null;
+  reject_reason: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FuturesTrade {
+  trade_id: string;
+  order_id: string;
+  symbol: string;
+  direction: "LONG" | "SHORT";
+  offset: string;
+  quantity: number;
+  price: string;
+  fee: string;
+  trading_day: string;
+  traded_at: string;
+}
+
+export interface FuturesSettlement {
+  trading_day: string;
+  balance: string;
+  equity: string;
+  available: string;
+  margin: string;
+  risk_ratio: string;
+  settlements: Record<string, string>;
+}
+
+export interface FuturesOrderCreate {
+  client_order_id: string;
+  symbol: string;
+  direction: "LONG" | "SHORT";
+  offset: "OPEN" | "CLOSE" | "CLOSE_TODAY" | "CLOSE_YESTERDAY";
+  quantity: number;
+  order_type: "MARKET" | "LIMIT";
+  limit_price?: string;
+}
+
+export interface FuturesBacktestArtifact extends Artifact {
+  metadata: {
+    run_id: string;
+    final_event_hash: string;
+    metrics: {
+      final_equity: string;
+      total_return: number;
+      max_drawdown: number;
+      trade_count: number;
+      fees: string;
+      final_risk_ratio: number;
+    };
+  };
+}
+
+export interface FuturesBacktestResult {
+  run_id: string;
+  spec_artifact_id: string;
+  result_artifact_id: string;
+  run_dir: string;
+  final_event_hash: string;
+  metrics: FuturesBacktestArtifact["metadata"]["metrics"];
 }
 
 export type FactorState = "DRAFT" | "VALIDATED" | "APPROVED" | "ACTIVE" | "DEPRECATED";
@@ -196,6 +342,36 @@ export const api = {
   systemStatus: () => get<SystemStatus>("/api/system/status"),
   killSwitch: (engage: boolean, reason: string) =>
     post<{ kill_switch: boolean }>(`/api/system/killswitch?engage=${engage}&reason=${encodeURIComponent(reason)}`),
+  futuresContracts: () => get<FuturesContract[]>("/api/futures/contracts"),
+  futuresSimulations: () => get<FuturesSimulationSummary[]>("/api/futures/simulations"),
+  createFuturesSimulation: (name: string, initialBalance: string) =>
+    post<FuturesSnapshot>("/api/futures/simulations", {
+      name,
+      initial_balance: initialBalance,
+      mode: "PAPER",
+    }),
+  futuresSnapshot: (id: string) => get<FuturesSnapshot>(`/api/futures/simulations/${id}`),
+  futuresOrders: (id: string) => get<FuturesOrder[]>(`/api/futures/simulations/${id}/orders`),
+  futuresTrades: (id: string) => get<FuturesTrade[]>(`/api/futures/simulations/${id}/trades`),
+  futuresSettlements: (id: string) =>
+    get<FuturesSettlement[]>(`/api/futures/simulations/${id}/settlements`),
+  submitFuturesOrder: (id: string, body: FuturesOrderCreate) =>
+    post<FuturesOrder>(`/api/futures/simulations/${id}/orders`, body),
+  cancelFuturesOrder: (id: string, orderId: string) =>
+    post<FuturesOrder>(`/api/futures/simulations/${id}/orders/${orderId}/cancel`),
+  advanceFuturesSimulation: (id: string) =>
+    post<FuturesSnapshot>(`/api/futures/simulations/${id}/advance`),
+  futuresBacktests: () => get<FuturesBacktestArtifact[]>("/api/futures/backtests"),
+  runFuturesBacktest: (symbol: string) =>
+    post<FuturesBacktestResult>("/api/futures/backtests", {
+      strategy_id: "moving_average_trend",
+      symbol,
+      initial_balance: "100000",
+      lots: 2,
+      fast_window: 2,
+      slow_window: 3,
+      random_seed: 42,
+    }),
 };
 
 export const fmt = {

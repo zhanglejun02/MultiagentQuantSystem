@@ -8,7 +8,7 @@ export default function StatCard({
   tone?: "up" | "down" | "warn" | "ok";
 }) {
   return (
-    <div className="stat-card">
+    <div className={`stat-card ${tone ? `stat-card-${tone}` : ""}`}>
       <div className="stat-label">{label}</div>
       <div className={`stat-value ${tone ?? ""}`}>{value}</div>
     </div>

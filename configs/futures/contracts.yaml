@@ -1,0 +1,35 @@
+version: fixture-2026.1
+contracts:
+  - symbol: rb2701.SHFE
+    name: 螺纹钢 2701
+    exchange: SHFE
+    product: rb
+    multiplier: "10"
+    price_tick: "1"
+    long_margin_rate: "0.12"
+    short_margin_rate: "0.12"
+    open_fee_per_lot: "2"
+    close_fee_per_lot: "2"
+    close_today_fee_per_lot: "4"
+  - symbol: m2701.DCE
+    name: 豆粕 2701
+    exchange: DCE
+    product: m
+    multiplier: "10"
+    price_tick: "1"
+    long_margin_rate: "0.10"
+    short_margin_rate: "0.10"
+    open_fee_per_lot: "1.5"
+    close_fee_per_lot: "1.5"
+    close_today_fee_per_lot: "1.5"
+  - symbol: MA701.CZCE
+    name: 甲醇 701
+    exchange: CZCE
+    product: MA
+    multiplier: "10"
+    price_tick: "1"
+    long_margin_rate: "0.11"
+    short_margin_rate: "0.11"
+    open_fee_per_lot: "2"
+    close_fee_per_lot: "2"
+    close_today_fee_per_lot: "6"

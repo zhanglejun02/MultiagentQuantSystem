@@ -1,6 +1,6 @@
 # quant-system
 
-面向 A 股的个人量化交易系统：PIT 正确的数据层、事件驱动权威回测、不可变 Artifact 血缘、Paper Trading 优先。
+面向 A 股与中国商品期货的个人量化交易系统：PIT 正确的数据层、事件驱动权威回测、不可变 Artifact 血缘、Paper Trading 优先。
 
 **核心原则**
 
@@ -12,7 +12,9 @@
 
 详细设计见 [docs/architecture.md](docs/architecture.md)，因子登记与晋级规则见
 [docs/factor_registry.md](docs/factor_registry.md)，多模型配置见
-[docs/multi_agent_llm.md](docs/multi_agent_llm.md)。
+[docs/multi_agent_llm.md](docs/multi_agent_llm.md)，真实日线同步见
+[docs/tushare_data.md](docs/tushare_data.md)，期货仿真语义见
+[docs/futures.md](docs/futures.md)。
 
 ## 安装
 
@@ -46,6 +48,18 @@ python scripts/generate_fixtures.py
 
 生成确定性合成 A 股数据到 `var/fixtures/cn_a/`，覆盖：正常股票、ST、停牌、退市、涨跌停、次新股、低流动性等场景。**合成数据，不代表任何真实市场表现。**
 
+## 同步 Tushare Pro 日线
+
+注册 Tushare Pro 并取得 Token 后，将 `TUSHARE_TOKEN` 写入本地 `.env`，再执行：
+
+```bash
+set -a && source .env && set +a
+python scripts/sync_tushare_daily.py --start 2024-01-01 --end 2024-06-30
+```
+
+同步器输出未复权沪深日线到 `var/data/tushare/cn_a_daily/`。首次使用、积分要求、PIT
+边界和真实数据回测命令见 [docs/tushare_data.md](docs/tushare_data.md)。
+
 ## 运行测试
 
 ```bash
@@ -61,6 +75,14 @@ python scripts/run_sample_backtest.py
 产物（equity curve / orders / trades / positions / event log / metrics）写入 `var/artifacts/backtests/<backtest_id>/`，并在 Artifact Registry 中注册血缘。
 
 示例策略为横截面动量 Top-K，**仅用于验证框架管线，不构成任何盈利声明**。
+
+期货样例回测复用 Dashboard 的期货 OMS、风控、撮合、账本和结算逻辑：
+
+```bash
+python scripts/run_sample_futures_backtest.py
+```
+
+三个商品期货合约和日线均为确定性 fixture，只用于验证多空、开平、保证金和逐日盯市。
 
 ## 启动 API
 
@@ -98,6 +120,7 @@ src/quant_system/
   backtest/       事件驱动回测引擎、账本、成交/滑点/费用、回放
   risk/           事前风控、运行时熔断、KillSwitch
   execution/      OMS、BrokerGateway、PaperBroker、对账
+  futures/        独立期货领域、OMS、保证金账本、仿真、回测与 Gateway 端口
   research/       实验生命周期、Scorecard、晋升校验
   agents/         Tool Protocol（研究工具边界）
   api/            FastAPI
@@ -111,5 +134,5 @@ docs/             架构文档与 ADR
 
 - 不存在 `send_live_order` / `change_risk_limit` / `transfer_funds` 工具。
 - Agent 可以产生 `DeploymentProposal`，但无法激活实盘部署。
-- 未实现任何真实券商适配器；只有 `PaperBrokerGateway`。
+- 未实现任何真实券商或 CTP 适配器；只有股票与期货本地 Paper Gateway。
 - 详见 [docs/trading_safety.md](docs/trading_safety.md)。

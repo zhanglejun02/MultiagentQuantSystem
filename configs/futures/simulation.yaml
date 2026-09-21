@@ -1,0 +1,10 @@
+mode: PAPER
+matching:
+  slippage_ticks: "1"
+  participation_limit: "0.05"
+risk:
+  max_order_lots: 20
+  max_contract_lots: 50
+  max_active_orders: 20
+  max_margin_ratio: "0.70"
+  max_price_deviation: "0.08"

@@ -1,4 +1,4 @@
-"""Typed artifact constructors for the twelve canonical artifact kinds.
+"""Typed artifact constructors for the canonical artifact kinds.
 
 Each helper builds an immutable ArtifactEnvelope with the right type tag and
 metadata schema. Content payloads live in the ArtifactStore.
@@ -69,6 +69,14 @@ def backtest_spec_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
 
 def backtest_result_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
     return _make(ArtifactType.BACKTEST_RESULT, producer, **kw)
+
+
+def futures_backtest_spec_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
+    return _make(ArtifactType.FUTURES_BACKTEST_SPEC, producer, **kw)
+
+
+def futures_backtest_result_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
+    return _make(ArtifactType.FUTURES_BACKTEST_RESULT, producer, **kw)
 
 
 def validation_report_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:

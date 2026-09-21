@@ -54,10 +54,16 @@ def main() -> None:
     create_all(engine)
     session_factory = make_session_factory(engine)
 
-    fixture_dir = var / "fixtures" / "cn_a"
-    if not (fixture_dir / "bars.parquet").exists():
-        generate_fixture_data(str(fixture_dir), seed=42)
-        print(f"fixtures generated at {fixture_dir}")
+    configured_data_dir = os.environ.get("QUANT_DATA_DIR")
+    data_dir = Path(configured_data_dir) if configured_data_dir else var / "fixtures" / "cn_a"
+    if not (data_dir / "bars.parquet").exists():
+        if configured_data_dir:
+            raise FileNotFoundError(f"configured market data not found: {data_dir / 'bars.parquet'}")
+        generate_fixture_data(str(data_dir), seed=42)
+        print(f"fixtures generated at {data_dir}")
+    data_label = "external PIT dataset" if configured_data_dir else "fixture data"
+    backtest_start = date.fromisoformat(os.environ.get("QUANT_BACKTEST_START", "2024-01-02"))
+    backtest_end = date.fromisoformat(os.environ.get("QUANT_BACKTEST_END", "2024-06-28"))
 
     store = LocalArtifactStore(str(var / "artifacts"))
     registry = ArtifactRegistry(session_factory)
@@ -65,7 +71,7 @@ def main() -> None:
     snapshots = DataSnapshotService(store, registry)
     experiments = ExperimentService(session_factory)
 
-    snapshot = snapshots.create_snapshot(str(fixture_dir), producer="sample-script")
+    snapshot = snapshots.create_snapshot(str(data_dir), producer="sample-script")
     print(f"data snapshot: {snapshot.artifact_id}")
 
     exp = experiments.create("momentum_topk sample", "framework exercise, not alpha")
@@ -74,7 +80,7 @@ def main() -> None:
 
     from quant_system.data.providers.local_parquet import LocalParquetProvider
 
-    provider = LocalParquetProvider(str(fixture_dir))
+    provider = LocalParquetProvider(str(data_dir))
     rulebook = ConfigAShareRuleBook(str(ROOT / "configs" / "markets" / "cn_a.yaml"))
     bt_engine = EventDrivenBacktestEngine(
         provider=provider, rulebook=rulebook, store=store, registry=registry,
@@ -83,8 +89,8 @@ def main() -> None:
     request = BacktestRequest(
         strategy_id="momentum_topk",
         dataset_snapshot_id=snapshot.artifact_id,
-        start_date=date(2024, 1, 2),
-        end_date=date(2024, 6, 28),
+        start_date=backtest_start,
+        end_date=backtest_end,
         initial_cash=Decimal("1000000"),
         experiment_id=exp.experiment_id,
         config={"params": {"lookback_days": 20, "top_k": 3, "exclude_st": True}},
@@ -151,7 +157,7 @@ def main() -> None:
 
     perf = result.performance_metrics
     exe = result.execution_metrics
-    print("\n=== sample backtest summary (fixture data — NOT a profitability claim) ===")
+    print(f"\n=== sample backtest summary ({data_label} — NOT a profitability claim) ===")
     print(f"  total_return      : {perf['total_return']:+.4%}")
     print(f"  annualized_return : {perf['annualized_return']:+.4%}")
     print(f"  sharpe            : {perf['sharpe']:.3f}")
