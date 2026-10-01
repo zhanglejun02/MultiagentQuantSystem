@@ -53,8 +53,17 @@ class FactorExpression:
             elif isinstance(child, ast.Call):
                 if not isinstance(child.func, ast.Name) or child.func.id not in ALLOWED_FUNCTIONS:
                     raise FactorExpressionError("only approved factor functions are allowed")
+                if child.func.id == "rank" and child is not node:
+                    raise FactorExpressionError("rank is only allowed as the outermost function")
                 if child.keywords:
                     raise FactorExpressionError("keyword arguments are not supported")
+                expected_args = 1 if child.func.id in {"rank", "abs"} else 2
+                if len(child.args) != expected_args:
+                    raise FactorExpressionError(
+                        f"{child.func.id} requires exactly {expected_args} argument(s)"
+                    )
+                if child.func.id in {"delay", "delta", "ts_mean", "ts_std"}:
+                    self._window_size(child.args[1])
             elif isinstance(child, ast.BinOp) and not isinstance(child.op, ALLOWED_BINARY_OPS):
                 raise FactorExpressionError("unsupported binary operator")
             elif isinstance(child, ast.UnaryOp) and not isinstance(child.op, (ast.USub, ast.UAdd)):

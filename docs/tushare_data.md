@@ -45,6 +45,41 @@ python scripts/sync_tushare_daily.py --start 2020-01-01 --end 2024-12-31
 默认输出目录是 `var/data/tushare/cn_a_daily/`。再次同步会按 `symbol + trade_date`
 增量合并和覆盖，不产生重复日线；`--overwrite` 会替换原有日线。
 
+## 每日 A 股 + 国内期货流水线
+
+`run_daily_market_pipeline.py` 是当前推荐的 EOD 入口。它拉取最近交易日或指定交易日，
+经过确定性质量门禁后，依次注册 `DATA_QUALITY_REPORT`、`DATA_SNAPSHOT` 和
+`MARKET_SNAPSHOT`：
+
+```bash
+set -a && source .env && set +a
+python scripts/run_daily_market_pipeline.py --trade-date auto --assets equity
+
+# 首次接入时建议显式给出预期股票数，启用覆盖率门禁
+python scripts/run_daily_market_pipeline.py \
+   --trade-date 2026-09-21 \
+   --assets equity \
+   --expected-equity-symbols 5400
+```
+
+当前积分不足以读取 `fut_daily` 时使用默认的 `--assets equity`，期货接口不会被调用，A 股
+快照可以正常通过并发布。达到期货日线权限后改用 `--assets all`；此时 `futures_daily`
+自动成为必需表，缺失仍会阻断发布。
+
+核心表是交易日历、沪深日线和六家交易所的期货日线。复权因子、停牌、名称变更和
+基准指数按账户权限探测；不可用时写入质量告警，但不伪造数据。质量错误会保留报告并以
+退出码 `2` 结束，不发布数据或市场快照。同一交易日同一内容重复运行会复用既有 Artifact。
+
+Dashboard 通过以下只读接口展示结果，不允许从网页触发外部同步：
+
+- `GET /api/market-data/status`
+- `GET /api/market-snapshots`
+- `GET /api/market-snapshots/latest`
+- `GET /api/market-snapshots/{artifact_id}`
+
+建议使用 macOS `launchd` 在交易日 `18:30` 运行，`19:30` 和 `20:30` 补跑；所有时间均为
+`Asia/Shanghai`。调度器只负责调用上述幂等 CLI，业务规则仍由流水线执行。
+
 同步器调用官方 HTTPS REST API，不依赖 pandas 或 Tushare SDK。它按交易日拉取全市场数据，
 并执行以下归一化：
 
@@ -80,3 +115,7 @@ python scripts/run_sample_backtest.py
 
 因此可用于验证真实数据管线和初步价格策略，但在补齐复权因子、历史 ST/停牌和公司行动前，
 不应将长期收益结果用于策略晋级或实盘判断。
+
+每日流水线已经能发布 A 股与期货核心 EOD 快照，但增强数据的历史回填仍受实际 Tushare
+权限约束。`MARKET_SNAPSHOT` 可以在增强表缺失时降级展示；长期复权收益、历史可投资域和
+策略 Promotion 仍必须等待公司行动、复权、ST 与停牌历史完整后放行。

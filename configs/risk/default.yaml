@@ -10,3 +10,9 @@ pretrade:
 runtime:
   max_daily_loss_pct: "0.05"
   max_drawdown_pct: "0.20"
+
+portfolio:
+  max_gross_leverage: "1.00"
+  max_abs_net_exposure: "1.00"
+  max_margin_ratio: "0.50"
+  max_strategy_allocation: "1.00"

@@ -12,7 +12,8 @@ from quant_system.backtest.account.ledger import AccountLedger
 from quant_system.domain.enums import OrderSide
 from quant_system.domain.models import OrderIntent
 from quant_system.domain.types import ZERO
-from quant_system.risk.runtime import KillSwitch
+from quant_system.risk.portfolio import PortfolioRiskControlPlane, RiskContribution
+from quant_system.risk.runtime import TradingRuntime
 
 
 @dataclass
@@ -25,6 +26,8 @@ class RiskContext:
     today_submitted_value: Decimal = ZERO
     seen_client_order_ids: set[str] = field(default_factory=set)
     fee_buffer: Decimal = Decimal("1.01")
+    pending_gross_delta: Decimal = ZERO
+    pending_net_delta: Decimal = ZERO
 
 
 @dataclass(frozen=True)
@@ -178,14 +181,48 @@ class AvailablePositionRule:
         return None
 
 
+class GlobalPortfolioRiskRule:
+    name = "GlobalPortfolioRiskRule"
+
+    def __init__(self, control_plane: PortfolioRiskControlPlane) -> None:
+        self._control_plane = control_plane
+
+    def check(self, intent: OrderIntent, ctx: RiskContext) -> RiskViolation | None:
+        self._control_plane.update(
+            RiskContribution(
+                account_id=intent.account_id,
+                strategy_id=intent.strategy_id,
+                asset_class="EQUITY",
+                nav=ctx.ledger.nav,
+                gross_exposure=ctx.ledger.market_value,
+                net_exposure=ctx.ledger.market_value,
+            )
+        )
+        value = _intent_value(intent)
+        delta = value if intent.side == OrderSide.BUY else -value
+        decision = self._control_plane.evaluate_increment(
+            strategy_id=intent.strategy_id,
+            gross_delta=ctx.pending_gross_delta + delta,
+            net_delta=ctx.pending_net_delta + delta,
+        )
+        if decision.approved:
+            return None
+        return RiskViolation(self.name, "; ".join(decision.violations))
+
+
 class PreTradeRiskEngine:
-    def __init__(self, rules: list[PreTradeRule], kill_switch: KillSwitch) -> None:
+    def __init__(self, rules: list[PreTradeRule], runtime: TradingRuntime) -> None:
         self._rules = rules
-        self._kill_switch = kill_switch
+        self._runtime = runtime
 
     def evaluate(self, intent: OrderIntent, ctx: RiskContext) -> list[RiskViolation]:
-        if self._kill_switch.engaged:
-            return [RiskViolation("KillSwitch", f"kill switch engaged: {self._kill_switch.reason}")]
+        if not self._runtime.can_submit(increases_risk=intent.side == OrderSide.BUY):
+            return [
+                RiskViolation(
+                    "KillSwitch" if self._runtime.kill_switch.engaged else "RuntimeSafety",
+                    f"{self._runtime.state} blocks this order",
+                )
+            ]
         violations: list[RiskViolation] = []
         for rule in self._rules:
             try:

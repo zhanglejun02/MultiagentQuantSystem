@@ -34,10 +34,12 @@ class Factor(BaseModel):
 
 
 ALLOWED_FACTOR_TRANSITIONS: dict[FactorState, frozenset[FactorState]] = {
-    FactorState.DRAFT: frozenset({FactorState.VALIDATED, FactorState.DEPRECATED}),
-    FactorState.VALIDATED: frozenset({FactorState.DRAFT, FactorState.APPROVED, FactorState.DEPRECATED}),
-    FactorState.APPROVED: frozenset({FactorState.ACTIVE, FactorState.DEPRECATED}),
-    FactorState.ACTIVE: frozenset({FactorState.APPROVED, FactorState.DEPRECATED}),
+    FactorState.PROPOSED: frozenset({FactorState.SCREENED, FactorState.DEPRECATED}),
+    FactorState.SCREENED: frozenset({FactorState.CANDIDATE, FactorState.DEPRECATED}),
+    FactorState.CANDIDATE: frozenset({FactorState.VALIDATING, FactorState.DEPRECATED}),
+    FactorState.VALIDATING: frozenset({FactorState.VALIDATED, FactorState.DEPRECATED}),
+    FactorState.VALIDATED: frozenset({FactorState.STRATEGY_ELIGIBLE, FactorState.DEPRECATED}),
+    FactorState.STRATEGY_ELIGIBLE: frozenset({FactorState.DEPRECATED}),
     FactorState.DEPRECATED: frozenset(),
 }
 
@@ -99,7 +101,7 @@ class FactorRegistry:
                 category=category,
                 description=description,
                 owner=owner,
-                state=FactorState.DRAFT.value,
+                state=FactorState.PROPOSED.value,
                 code_ref=code_ref,
                 data_snapshot_id=data_snapshot_id,
                 validation_artifact_id=validation_artifact_id,
@@ -134,6 +136,22 @@ class FactorRegistry:
         reason: str = "",
         actor: str = "system",
     ) -> Factor:
+        if target != FactorState.DEPRECATED:
+            raise InvalidTransitionError(
+                "positive factor promotion is only allowed through FactorPromotionService"
+            )
+        return self._transition(factor_id, target, reason=reason, actor=actor)
+
+    def _transition(
+        self,
+        factor_id: str,
+        target: FactorState,
+        *,
+        reason: str,
+        actor: str,
+        validation_artifact_id: str | None = None,
+        metrics: dict[str, Any] | None = None,
+    ) -> Factor:
         with session_scope(self._sf) as session:
             row = session.get(FactorRow, factor_id)
             if row is None:
@@ -146,6 +164,10 @@ class FactorRegistry:
             now = utc_now()
             row.state = target.value
             row.updated_at = now
+            if validation_artifact_id is not None:
+                row.validation_artifact_id = validation_artifact_id
+            if metrics is not None:
+                row.metrics = metrics
             session.add(FactorTransitionRow(
                 factor_id=factor_id,
                 from_state=current.value,

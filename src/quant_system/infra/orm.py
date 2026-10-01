@@ -141,6 +141,37 @@ class FactorRunRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class StrategyRow(Base):
+    __tablename__ = "strategies"
+
+    strategy_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    strategy_key: Mapped[str] = mapped_column(String(100), index=True)
+    version: Mapped[str] = mapped_column(String(30))
+    state: Mapped[str] = mapped_column(String(30), index=True)
+    package_artifact_id: Mapped[str] = mapped_column(String(64))
+    factor_ids: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("uq_strategies_key_version", "strategy_key", "version", unique=True),
+    )
+
+
+class StrategyTransitionRow(Base):
+    __tablename__ = "strategy_transitions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    strategy_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("strategies.strategy_id"), index=True
+    )
+    from_state: Mapped[str] = mapped_column(String(30))
+    to_state: Mapped[str] = mapped_column(String(30))
+    reason: Mapped[str] = mapped_column(Text, default="")
+    actor: Mapped[str] = mapped_column(String(100), default="system")
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class FuturesSimulationRow(Base):
     __tablename__ = "futures_simulations"
 

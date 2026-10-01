@@ -26,7 +26,11 @@ Artifact 一经注册即不可变（`ArtifactEnvelope` 为 frozen pydantic model
 
 `DataSnapshot` `Universe` `FeatureSet` `Model` `Signal` `PortfolioTarget`
 `BacktestSpec` `BacktestResult` `ValidationReport` `StrategyPackage`
-`Deployment` `ResearchReport`
+`Deployment` `ResearchReport` `SignalSpec` `PortfolioConstructionSpec` `StrategySpec`
+
+策略链路要求 `StrategyPackage` 的直接父节点同时包含 `SignalSpec` 与
+`PortfolioConstructionSpec`。订单可沿 StrategyPackage、SignalSpec、Factor、Experiment、
+DatasetSnapshot 和 code commit 追溯；缺失该血缘时部署晋级 fail closed。
 
 ## 服务
 

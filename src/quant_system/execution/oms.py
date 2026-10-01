@@ -11,6 +11,7 @@ from quant_system.domain.enums import OrderSide, OrderStatus, OrderType
 from quant_system.domain.exceptions import InvalidTransitionError
 from quant_system.domain.models import OrderIntent
 from quant_system.domain.types import ZERO, new_id, utc_now
+from quant_system.risk.runtime import TradingRuntime
 
 VALID_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
     OrderStatus.CREATED: frozenset({OrderStatus.RISK_APPROVED, OrderStatus.REJECTED}),
@@ -102,14 +103,18 @@ class Order(BaseModel):
 class OrderManagementSystem:
     """In-memory OMS. client_order_id is the idempotency key."""
 
-    def __init__(self) -> None:
+    def __init__(self, runtime: TradingRuntime) -> None:
         self._orders: dict[str, Order] = {}
         self._by_client_id: dict[str, str] = {}
+        self._runtime = runtime
 
     def create_order(self, intent: OrderIntent) -> Order:
         existing_id = self._by_client_id.get(intent.client_order_id)
         if existing_id is not None:
             return self._orders[existing_id]  # idempotent: no duplicate order
+        self._runtime.require_order_submission_allowed(
+            increases_risk=intent.side == OrderSide.BUY
+        )
         order = Order(
             client_order_id=intent.client_order_id,
             strategy_id=intent.strategy_id,

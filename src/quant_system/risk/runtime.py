@@ -11,6 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from quant_system.domain.enums import TradingRuntimeState
+from quant_system.domain.exceptions import KillSwitchEngagedError
 from quant_system.domain.types import utc_now
 
 
@@ -69,6 +70,14 @@ class TradingRuntime:
         self._state = TradingRuntimeState.SAFE_MODE
         self._safe_mode_reason = reason
 
+    def set_state(self, state: TradingRuntimeState, *, reason: str, operator: str) -> None:
+        if not operator:
+            raise ValueError("set_state requires an operator identity")
+        if state in {TradingRuntimeState.RUNNING, TradingRuntimeState.KILLED}:
+            raise ValueError(f"use exit_safe_mode/kill_switch for {state}")
+        self._state = state
+        self._safe_mode_reason = f"{reason} (operator: {operator})"
+
     def exit_safe_mode(self, operator: str) -> None:
         if not operator:
             raise ValueError("exit_safe_mode requires an operator identity")
@@ -97,3 +106,30 @@ class TradingRuntime:
 
     def can_trade(self) -> bool:
         return self.state == TradingRuntimeState.RUNNING
+
+    def can_submit(self, *, increases_risk: bool) -> bool:
+        if self.state == TradingRuntimeState.RUNNING:
+            return True
+        if self.state in {TradingRuntimeState.REDUCE_ONLY, TradingRuntimeState.SAFE_MODE}:
+            return not increases_risk
+        return False
+
+    def can_cancel(self) -> bool:
+        return self.state != TradingRuntimeState.HALTED
+
+    def require_order_submission_allowed(self, *, increases_risk: bool) -> None:
+        if self.can_submit(increases_risk=increases_risk):
+            return
+        reason = self.kill_switch.reason if self.kill_switch.engaged else self._safe_mode_reason
+        raise KillSwitchEngagedError(
+            f"order submission blocked while runtime is {self.state}: "
+            f"{reason or 'no reason recorded'}"
+        )
+
+    def require_strategy_activation_allowed(self) -> None:
+        if not self.can_trade():
+            raise KillSwitchEngagedError(f"strategy activation blocked while runtime is {self.state}")
+
+    def require_cancel_allowed(self) -> None:
+        if not self.can_cancel():
+            raise KillSwitchEngagedError(f"order cancellation blocked while runtime is {self.state}")

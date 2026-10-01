@@ -6,33 +6,40 @@ Dashboard 只登记版本和执行受控状态迁移，不提供在线代码编�
 ## 生命周期
 
 ```text
-DRAFT -> VALIDATED -> APPROVED -> ACTIVE
-   |          |           |         |
-   +----------+-----------+---------+-> DEPRECATED
+PROPOSED -> SCREENED -> CANDIDATE -> VALIDATING -> VALIDATED -> STRATEGY_ELIGIBLE
+  |            |            |             |            |              |
+  +------------+------------+-------------+------------+--------------+-> DEPRECATED
 ```
 
-- `DRAFT`：已登记，尚未通过 PIT、覆盖率和稳定性验证。
-- `VALIDATED`：验证完成，等待人工审批。
-- `APPROVED`：允许策略绑定，尚未启用。
-- `ACTIVE`：当前允许被运行配置引用。
+- `PROPOSED`：已登记，尚未通过确定性筛选。
+- `SCREENED`：PIT 与基础质量检查通过。
+- `CANDIDATE`：OOS、多重检验与相关性去重通过，仍不可用于策略。
+- `VALIDATING`：进入完整验证流水线。
+- `VALIDATED`：walk-forward、purged CV/embargo、中性化、成本、容量和稳健性通过。
+- `STRATEGY_ELIGIBLE`：final holdout 通过，允许 StrategyPackage 引用。
 - `DEPRECATED`：停止新引用，历史血缘继续保留。
 
-`ACTIVE` 可以退回 `APPROVED` 暂停使用；`DEPRECATED` 是终态。每次状态变化都保存操作人、
-原因和时间，禁止直接修改数据库状态字段。
+正向晋级只能由 `FactorPromotionService` 读取已注册且状态为 `VERIFIED` 的
+`VALIDATION_REPORT` 后执行，报告必须绑定目标 `factor_id`。Dashboard、Agent 和通用
+registry API 均无正向晋级权限；人工只可退役。每次状态变化都保存操作人、原因和时间。
+
+final holdout 对 Agent 不可见，只由隔离的 validation job 运行并向 promotion policy
+提供 PASS/FAIL。不得把 holdout 明细或指标放入 Agent 上下文。
 
 ## 版本约束
 
 - `(factor_key, version)` 全局唯一。
 - 代码引用、参数、数据快照和验证指标随版本登记，不覆盖历史版本。
 - 缺失指标显示为未知，不按零值参与统计。
-- 当前实现提供注册和晋级控制面；策略绑定 `factor_id` 及只允许使用已批准版本的执行校验，
-  应在后续策略包协议中接入。
+- Strategy Registry 强制策略包引用 `STRATEGY_ELIGIBLE` 因子，并要求
+  `SignalSpec -> PortfolioConstructionSpec -> StrategyPackage` 血缘完整。
 
 ## API
 
 - `GET /api/factors`
 - `POST /api/factors`
 - `POST /api/factors/{factor_id}/transition`
+- `POST /api/factors/{factor_id}/promote`
 - `GET /api/factors/{factor_id}/history`
 - `GET /api/factor-runs`
 - `POST /api/factor-runs/evaluate`
@@ -47,4 +54,5 @@ Factor Explorer 使用受限 DSL，并在每个决策日通过 `available_at <= 
 - 报告：Rank IC、ICIR、IC 胜率、覆盖率、五分位收益、L/S 指标、换手、衰减与年度稳定性
 
 DSL 不允许属性访问、导入、下标、Lambda 或任意函数调用。V0 使用本地合成 A 股数据，
-不代表真实市场表现。自动发现、相关性去重、多重检验和 Factor Map 属于后续阶段。
+不代表真实市场表现。完整验证门槛已定义，但 OOS/walk-forward/purged CV 等批处理作业仍需
+接入；在这些作业产出可信 `VALIDATION_REPORT` 前，因子无法到达 `STRATEGY_ELIGIBLE`。

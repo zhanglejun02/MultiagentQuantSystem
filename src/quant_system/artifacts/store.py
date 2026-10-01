@@ -24,6 +24,10 @@ class ArtifactStore(Protocol):
 
     def put_dir(self, key: str, src_dir: str) -> tuple[str, str]: ...
 
+    def put_content_addressed_json(self, namespace: str, obj: Any) -> tuple[str, str]: ...
+
+    def put_content_addressed_dir(self, namespace: str, src_dir: str) -> tuple[str, str]: ...
+
     def get_bytes(self, uri: str) -> bytes: ...
 
     def get_json(self, uri: str) -> Any: ...
@@ -54,6 +58,20 @@ class LocalArtifactStore:
         data = json.dumps(obj, sort_keys=True, default=str, ensure_ascii=False, indent=1).encode()
         return self.put_bytes(key, data)
 
+    def put_content_addressed_json(self, namespace: str, obj: Any) -> tuple[str, str]:
+        data = json.dumps(
+            obj, sort_keys=True, default=str, ensure_ascii=False, separators=(",", ":")
+        ).encode()
+        digest = hash_bytes(data)
+        path = self._path(f"{namespace}/{digest}.json")
+        if path.exists():
+            if hash_bytes(path.read_bytes()) != digest:
+                raise ImmutabilityError(f"content-addressed file drifted at {path}")
+            return f"file://{path}", digest
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return f"file://{path}", digest
+
     def put_dir(self, key: str, src_dir: str) -> tuple[str, str]:
         """Copy a directory into the store; hash is over the sorted file manifest."""
         dest = self._path(key)
@@ -61,6 +79,18 @@ class LocalArtifactStore:
             raise ImmutabilityError(f"artifact content already exists at {dest}")
         shutil.copytree(src_dir, dest)
         digest = self.hash_dir(str(dest))
+        return f"file://{dest}", digest
+
+    def put_content_addressed_dir(self, namespace: str, src_dir: str) -> tuple[str, str]:
+        """Store a directory under its digest, reusing identical immutable content."""
+        digest = self.hash_dir(src_dir)
+        dest = self._path(f"{namespace}/{digest}")
+        if dest.exists():
+            if self.hash_dir(str(dest)) != digest:
+                raise ImmutabilityError(f"content-addressed directory drifted at {dest}")
+            return f"file://{dest}", digest
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src_dir, dest)
         return f"file://{dest}", digest
 
     @staticmethod

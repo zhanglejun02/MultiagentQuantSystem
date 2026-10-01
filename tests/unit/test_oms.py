@@ -4,10 +4,13 @@ from decimal import Decimal
 
 import pytest
 
-from quant_system.domain.enums import OrderSide, OrderStatus, OrderType
-from quant_system.domain.exceptions import InvalidTransitionError
+from quant_system.domain.enums import OrderSide, OrderStatus, OrderType, TradingRuntimeState
+from quant_system.domain.exceptions import InvalidTransitionError, KillSwitchEngagedError
 from quant_system.domain.models import OrderIntent
+from quant_system.execution.gateway import SafetyGatedBrokerGateway
 from quant_system.execution.oms import OrderManagementSystem
+from quant_system.execution.paper import PaperBrokerGateway
+from quant_system.risk.runtime import KillSwitch, TradingRuntime
 
 
 def intent(client_order_id: str = "c1", qty: int = 1000) -> OrderIntent:
@@ -18,16 +21,63 @@ def intent(client_order_id: str = "c1", qty: int = 1000) -> OrderIntent:
     )
 
 
+def make_oms() -> OrderManagementSystem:
+    return OrderManagementSystem(TradingRuntime(KillSwitch()))
+
+
 def test_client_order_id_idempotency():
-    oms = OrderManagementSystem()
+    oms = make_oms()
     o1 = oms.create_order(intent("dup"))
     o2 = oms.create_order(intent("dup"))
     assert o1.order_id == o2.order_id
     assert len(oms.all_orders()) == 1
 
 
+@pytest.mark.parametrize("halt", ["cancel_only", "kill_switch"])
+def test_runtime_safety_state_blocks_new_orders(halt: str):
+    kill_switch = KillSwitch()
+    runtime = TradingRuntime(kill_switch)
+    oms = OrderManagementSystem(runtime)
+
+    if halt == "cancel_only":
+        runtime.set_state(
+            TradingRuntimeState.CANCEL_ONLY,
+            reason="broker unstable",
+            operator="risk-daemon",
+        )
+    else:
+        kill_switch.engage("operator halt")
+
+    with pytest.raises(KillSwitchEngagedError):
+        oms.create_order(intent())
+    assert oms.all_orders() == []
+
+
+def test_safe_mode_allows_only_risk_reducing_order():
+    runtime = TradingRuntime(KillSwitch())
+    runtime.enter_safe_mode("reconciliation mismatch")
+    oms = OrderManagementSystem(runtime)
+
+    sell = oms.create_order(intent("sell", qty=100).model_copy(update={"side": OrderSide.SELL}))
+    assert sell.side == OrderSide.SELL
+    with pytest.raises(KillSwitchEngagedError):
+        oms.create_order(intent("buy"))
+
+
+def test_gateway_rechecks_runtime_immediately_before_submit():
+    runtime = TradingRuntime(KillSwitch())
+    order = OrderManagementSystem(runtime).create_order(intent())
+    broker = PaperBrokerGateway(Decimal("100000"))
+    gateway = SafetyGatedBrokerGateway(broker, runtime)
+    runtime.enter_safe_mode("late reconciliation mismatch")
+
+    with pytest.raises(KillSwitchEngagedError):
+        gateway.submit(order)
+    assert broker.known_orders() == []
+
+
 def test_valid_lifecycle_to_filled():
-    oms = OrderManagementSystem()
+    oms = make_oms()
     order = oms.create_order(intent())
     for status in (OrderStatus.RISK_APPROVED, OrderStatus.SUBMITTING,
                    OrderStatus.SUBMITTED, OrderStatus.ACKNOWLEDGED):
@@ -41,14 +91,14 @@ def test_valid_lifecycle_to_filled():
 
 
 def test_invalid_transition_rejected():
-    oms = OrderManagementSystem()
+    oms = make_oms()
     order = oms.create_order(intent())
     with pytest.raises(InvalidTransitionError):
         order.transition(OrderStatus.FILLED)  # CREATED -> FILLED illegal
 
 
 def test_terminal_state_locked():
-    oms = OrderManagementSystem()
+    oms = make_oms()
     order = oms.create_order(intent())
     order.transition(OrderStatus.REJECTED, reason="risk")
     with pytest.raises(InvalidTransitionError):
@@ -56,7 +106,7 @@ def test_terminal_state_locked():
 
 
 def test_overfill_rejected():
-    oms = OrderManagementSystem()
+    oms = make_oms()
     order = oms.create_order(intent(qty=100))
     for status in (OrderStatus.RISK_APPROVED, OrderStatus.SUBMITTING,
                    OrderStatus.SUBMITTED, OrderStatus.ACKNOWLEDGED):

@@ -60,6 +60,16 @@ python scripts/sync_tushare_daily.py --start 2024-01-01 --end 2024-06-30
 同步器输出未复权沪深日线到 `var/data/tushare/cn_a_daily/`。首次使用、积分要求、PIT
 边界和真实数据回测命令见 [docs/tushare_data.md](docs/tushare_data.md)。
 
+日常运行推荐使用 A 股 + 国内期货统一 EOD 流水线：
+
+```bash
+set -a && source .env && set +a
+python scripts/run_daily_market_pipeline.py --trade-date auto --assets equity
+```
+
+命令先执行质量门禁，再发布不可变 `DATA_SNAPSHOT` 和确定性 `MARKET_SNAPSHOT`；失败不会
+产生可供回测使用的数据版本。Dashboard 的“市场”页通过只读 API 展示最近快照。
+
 ## 运行测试
 
 ```bash
@@ -87,6 +97,8 @@ python scripts/run_sample_futures_backtest.py
 ## 启动 API
 
 ```bash
+# 启用多智能体研究时先加载本地 .env：
+set -a && source .env && set +a
 # 使用样例回测的 SQLite 元数据库：
 QUANT_DB_URL="sqlite:///$PWD/var/quant.db" \
   uvicorn quant_system.api.app:factory --factory --port 8000
@@ -105,6 +117,10 @@ npm run dev
 ```
 
 打开 http://127.0.0.1:5173（开发服务器已代理 `/api` 到 8000 端口）。先运行一次样例回测以便有数据可看。
+
+多智能体研究入口位于 http://127.0.0.1:5173/research。Researcher、Critic、Statistician
+和 Orchestrator 只生成及审查研究 Artifact；本地 FactorLab 和硬门槛决定候选是否通过，
+Agent 不会进入交易执行路径。
 
 ## 目录结构
 

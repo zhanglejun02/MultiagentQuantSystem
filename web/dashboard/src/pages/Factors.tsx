@@ -29,20 +29,6 @@ import { useAsync } from "../hooks";
 
 type LabView = "workspace" | "explorer" | "runs" | "library";
 
-const NEXT_STATE: Partial<Record<FactorState, FactorState>> = {
-  DRAFT: "VALIDATED",
-  VALIDATED: "APPROVED",
-  APPROVED: "ACTIVE",
-  ACTIVE: "APPROVED",
-};
-
-const NEXT_LABEL: Partial<Record<FactorState, string>> = {
-  DRAFT: "提交验证",
-  VALIDATED: "批准",
-  APPROVED: "启用",
-  ACTIVE: "暂停",
-};
-
 const TEMPLATES = [
   {
     name: "波动调整反转",
@@ -174,7 +160,7 @@ export default function Factors() {
   }
 
   async function transition(factor: Factor, target: FactorState) {
-    const action = target === "DEPRECATED" ? "停用" : NEXT_LABEL[factor.state];
+    const action = "停用";
     if (!confirm(`确认${action}因子 ${factor.factor_key}@${factor.version}？`)) return;
     setBusy(true);
     setActionError("");
@@ -218,13 +204,14 @@ export default function Factors() {
       key: "actions",
       title: "操作",
       render: (factor) => <div className="table-actions">
-        {NEXT_STATE[factor.state] && <button className="button-compact" disabled={busy} onClick={() => transition(factor, NEXT_STATE[factor.state]!)}><ArrowRight size={13} /> {NEXT_LABEL[factor.state]}</button>}
         {factor.state !== "DEPRECATED" && <button className="button-compact danger" disabled={busy} onClick={() => transition(factor, "DEPRECATED")}><Ban size={13} /> 停用</button>}
       </div>,
     },
   ];
 
-  const activeFactors = factorRows.filter((factor) => factor.state === "ACTIVE").length;
+  const activeFactors = factorRows.filter(
+    (factor) => factor.state === "STRATEGY_ELIGIBLE"
+  ).length;
   const latestRun = selectedRun ?? runRows[0] ?? null;
 
   return (
@@ -279,7 +266,7 @@ export default function Factors() {
         <div className="grid cols-4 lab-summary">
           <StatCard label="评估运行" value={String(runRows.length)} />
           <StatCard label="因子版本" value={String(factorRows.length)} />
-          <StatCard label="已启用" value={String(activeFactors)} tone="ok" />
+          <StatCard label="策略可用" value={String(activeFactors)} tone="ok" />
           <StatCard label="搜索预算" value="V1 启用" />
         </div>
       </>}
@@ -315,7 +302,7 @@ export default function Factors() {
           <label>分类<input required value={factorForm.category} onChange={(event) => setFactorForm({ ...factorForm, category: event.target.value })} /></label>
           <label>负责人<input required value={factorForm.owner} onChange={(event) => setFactorForm({ ...factorForm, owner: event.target.value })} /></label>
           <label>来源引用<input required value={factorForm.code_ref} onChange={(event) => setFactorForm({ ...factorForm, code_ref: event.target.value })} /></label>
-        </div><label>研究假设<textarea value={factorForm.description} onChange={(event) => setFactorForm({ ...factorForm, description: event.target.value })} /></label><div className="form-actions"><button type="button" onClick={() => setShowCreate(false)}>取消</button><button className="primary" disabled={busy}>登记 DRAFT</button></div></form>}
+        </div><label>研究假设<textarea value={factorForm.description} onChange={(event) => setFactorForm({ ...factorForm, description: event.target.value })} /></label><div className="form-actions"><button type="button" onClick={() => setShowCreate(false)}>取消</button><button className="primary" disabled={busy}>登记 PROPOSED</button></div></form>}
         <div className="panel"><DataTable columns={factorColumns} rows={factorRows} rowKey={(factor) => factor.factor_id} empty="尚未登记因子版本。" /></div>
       </section>}
     </div>

@@ -6,14 +6,13 @@ trading runtime, risk, OMS, ledger, or broker adapters.
 
 from __future__ import annotations
 
+import io
 import json
-import ssl
 from collections.abc import Callable
 from typing import Any, Literal
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 import certifi
+import pycurl
 from pydantic import BaseModel, ConfigDict
 
 from quant_system.agents.config import AgentLLMConfig, AgentRoleName, LLMProviderConfig
@@ -47,25 +46,42 @@ def _http_transport(
     body: dict[str, Any],
     timeout_seconds: float,
 ) -> dict[str, Any]:
-    request = Request(
-        url,
-        data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json", **headers},
-        method="POST",
-    )
-    ssl_context = ssl.create_default_context(cafile=certifi.where())
-    try:
-        with urlopen(  # noqa: S310
-            request,
-            timeout=timeout_seconds,
-            context=ssl_context,
-        ) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:1000]
-        raise QuantSystemError(f"LLM provider returned HTTP {exc.code}: {detail}") from exc
-    except URLError as exc:
-        raise QuantSystemError(f"LLM provider connection failed: {exc.reason}") from exc
+    last_error: pycurl.error | None = None
+    for _ in range(3):
+        output = io.BytesIO()
+        request = pycurl.Curl()
+        try:
+            request.setopt(pycurl.URL, url.encode("utf-8"))
+            request.setopt(pycurl.POST, 1)
+            request.setopt(pycurl.POSTFIELDS, json.dumps(body).encode("utf-8"))
+            request.setopt(
+                pycurl.HTTPHEADER,
+                [f"{name}: {value}".encode() for name, value in {
+                    "Content-Type": "application/json",
+                    **headers,
+                }.items()],
+            )
+            request.setopt(pycurl.CAINFO, certifi.where().encode("utf-8"))
+            request.setopt(pycurl.TIMEOUT_MS, int(timeout_seconds * 1000))
+            request.setopt(pycurl.WRITEDATA, output)
+            request.perform()
+            status_code = int(request.getinfo(pycurl.RESPONSE_CODE))
+            raw = output.getvalue()
+            if status_code >= 400:
+                detail = raw.decode("utf-8", errors="replace")[:1000]
+                raise QuantSystemError(
+                    f"LLM provider returned HTTP {status_code}: {detail}"
+                )
+            payload = json.loads(raw.decode("utf-8"))
+            break
+        except pycurl.error as exc:
+            last_error = exc
+        finally:
+            request.close()
+    else:
+        raise QuantSystemError(
+            f"LLM provider connection failed after 3 attempts: {last_error}"
+        )
     if not isinstance(payload, dict):
         raise QuantSystemError("LLM provider response must be a JSON object")
     return payload
@@ -92,6 +108,7 @@ class LLMGateway:
                 model=role_config.model,
                 temperature=role_config.temperature,
                 max_tokens=role_config.max_output_tokens,
+                thinking=role_config.thinking,
                 api_key=api_key,
                 messages=messages,
             )
@@ -123,18 +140,22 @@ class LLMGateway:
         model: str,
         temperature: float,
         max_tokens: int,
+        thinking: Literal["enabled", "disabled"] | None,
         api_key: str,
         messages: list[LLMMessage],
     ) -> LLMResponse:
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": [message.model_dump() for message in messages],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if thinking is not None:
+            body["thinking"] = {"type": thinking}
         payload = self._transport(
             _join_url(provider.base_url, "chat/completions"),
             {"Authorization": f"Bearer {api_key}"},
-            {
-                "model": model,
-                "messages": [message.model_dump() for message in messages],
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            },
+            body,
             provider.timeout_seconds,
         )
         try:

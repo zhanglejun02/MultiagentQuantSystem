@@ -32,6 +32,10 @@ def test_factor_expression_evaluates_cross_sectional_scores():
         "rank(__import__('os'))",
         "rank(close.__class__)",
         "rank(close ** 2)",
+        "rank(close, 5)",
+        "rank(rank(close))",
+        "rank(delta(close))",
+        "rank(ts_mean(close, 0))",
     ],
 )
 def test_factor_expression_rejects_unsafe_or_unsupported_syntax(expression: str):

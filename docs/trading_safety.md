@@ -22,13 +22,25 @@ DuplicateOrder / PriceDeviation / StaleMarketData / AvailableCash / AvailablePos
 ## 运行时熔断
 
 RuntimeRiskMonitor 监控：max daily loss、max drawdown、券商断连、行情断连、对账失败。
-触发即置 **KillSwitch**：拒绝一切新订单，只允许撤单。KillSwitch 状态只能人工解除。
+运行时状态为 `NORMAL(RUNNING) / REDUCE_ONLY / CANCEL_ONLY / SAFE_MODE / HALTED / KILLED`。
+`REDUCE_ONLY` 与 `SAFE_MODE` 只允许降低风险，`CANCEL_ONLY` 仅允许撤单，`HALTED`
+彻底冻结，硬 KillSwitch 拒绝提交但仍允许撤单。KillSwitch 状态只能人工解除。
+
+安全判断在 OMS 和 Execution Gateway 两处执行：前者阻止创建非法新订单，后者在真正
+产生 broker side effect 前再次检查。策略激活也读取同一个 `TradingRuntime`。
 
 ## 对账与 SAFE_MODE
 
 ReconciliationService 比对券商侧（账户/持仓/订单/成交）与内部（ledger/positions/OMS）。
 不匹配分类：UNKNOWN_POSITION / UNKNOWN_ORDER / CASH_MISMATCH / POSITION_MISMATCH / TRADE_MISMATCH。
-关键不匹配 → TradingRuntime 进入 **SAFE_MODE**（等价 KillSwitch），PaperBroker 可注入故障以测试该路径。
+关键不匹配 → TradingRuntime 进入 **SAFE_MODE**；对账只是安全状态的一个输入源，
+不是 KillSwitch 的下游终点。PaperBroker 可注入故障以测试该路径。
+
+## 全局组合风险
+
+`PortfolioRiskControlPlane` 接收股票与期货的标准化 `RiskContribution`，按账户去重 NAV，
+按策略和资产类别聚合 gross/net exposure 与 margin。`CapitalAllocator` 执行策略预算，
+组合级 gross leverage、net exposure 和 margin ratio 在资产域风控之后、订单提交之前检查。
 
 ## 失败策略：fail closed
 

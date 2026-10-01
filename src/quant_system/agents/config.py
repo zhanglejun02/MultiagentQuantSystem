@@ -39,6 +39,7 @@ class AgentRoleConfig(BaseModel):
     model: str = Field(min_length=1)
     temperature: float = Field(default=0.1, ge=0, le=2)
     max_output_tokens: int = Field(default=4096, gt=0, le=100_000)
+    thinking: Literal["enabled", "disabled"] | None = None
 
 
 class ResearchBudget(BaseModel):
@@ -50,12 +51,21 @@ class ResearchBudget(BaseModel):
     max_cost_usd_per_run: float = Field(default=20.0, gt=0)
 
 
+class FactorValidationConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    min_ic_days: int = Field(default=20, gt=0)
+    min_coverage: float = Field(default=0.8, ge=0, le=1)
+    min_abs_rank_ic: float = Field(default=0.01, ge=0, le=1)
+
+
 class AgentLLMConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     providers: dict[str, LLMProviderConfig]
     roles: dict[AgentRoleName, AgentRoleConfig]
     research_budget: ResearchBudget = ResearchBudget()
+    factor_validation: FactorValidationConfig = FactorValidationConfig()
 
     @model_validator(mode="after")
     def _known_providers(self) -> AgentLLMConfig:

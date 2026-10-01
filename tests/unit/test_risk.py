@@ -103,7 +103,7 @@ def test_available_position():
 def test_kill_switch_rejects_everything():
     ks = KillSwitch()
     ks.engage("test")
-    engine = PreTradeRiskEngine([], ks)
+    engine = PreTradeRiskEngine([], TradingRuntime(ks))
     violations = engine.evaluate(make_intent(), make_ctx())
     assert violations and violations[0].rule == "KillSwitch"
 
@@ -115,7 +115,7 @@ def test_rule_exception_fails_closed():
         def check(self, intent, ctx):
             raise RuntimeError("boom")
 
-    engine = PreTradeRiskEngine([BrokenRule()], KillSwitch())
+    engine = PreTradeRiskEngine([BrokenRule()], TradingRuntime(KillSwitch()))
     violations = engine.evaluate(make_intent(), make_ctx())
     assert violations and "rejecting" in violations[0].message
 

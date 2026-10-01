@@ -26,7 +26,7 @@ from quant_system.futures.domain import Direction, FuturesOrderIntent, Offset
 from quant_system.futures.repository import FuturesSimulationRepository
 from quant_system.futures.service import FuturesSimulationService
 from quant_system.infra.db import create_all, make_engine, make_session_factory
-from quant_system.risk.runtime import KillSwitch
+from quant_system.risk.runtime import KillSwitch, TradingRuntime
 
 
 class FuturesBacktestRequest(BaseModel):
@@ -117,7 +117,7 @@ class FuturesBacktestEngine:
                 FuturesSimulationRepository(make_session_factory(engine)),
                 self.catalog,
                 self.data,
-                KillSwitch(),
+                TradingRuntime(KillSwitch()),
                 id_factory=id_factory,
                 now_provider=lambda: fixed_now,
             )

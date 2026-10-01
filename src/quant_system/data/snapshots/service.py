@@ -19,17 +19,29 @@ class DataSnapshotService:
         self._store = store
         self._registry = registry
 
-    def create_snapshot(self, data_dir: str, *, producer: str, code_commit: str = "unknown") -> ArtifactEnvelope:
+    def create_snapshot(
+        self,
+        data_dir: str,
+        *,
+        producer: str,
+        code_commit: str = "unknown",
+        parents: tuple[str, ...] = (),
+        metadata: dict[str, object] | None = None,
+    ) -> ArtifactEnvelope:
         manifest = self._manifest(data_dir)
         content_hash = hash_bytes(
             "\n".join(f"{name}:{digest}" for name, digest in sorted(manifest.items())).encode()
         )
+        uri, stored_hash = self._store.put_content_addressed_dir("data_snapshots", data_dir)
+        if stored_hash != content_hash:
+            raise ValueError("snapshot manifest hash does not match stored directory hash")
         env = data_snapshot_artifact(
             producer=producer,
-            uri=f"file://{Path(data_dir).resolve()}",
+            uri=uri,
             content_hash=content_hash,
             code_commit=code_commit,
-            metadata={"files": manifest, "n_files": len(manifest)},
+            parents=parents,
+            metadata={"files": manifest, "n_files": len(manifest), **(metadata or {})},
         )
         return self._registry.register(env)
 

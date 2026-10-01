@@ -2,6 +2,7 @@ import {
   Activity,
   BarChart3,
   BriefcaseBusiness,
+  CandlestickChart,
   FlaskConical,
   LayoutDashboard,
   ReceiptText,
@@ -18,9 +19,11 @@ import Backtest from "./pages/Backtest";
 import SystemRisk from "./pages/SystemRisk";
 import Factors from "./pages/Factors";
 import Futures from "./pages/Futures";
+import Market from "./pages/Market";
 
 const NAV = [
   { to: "/overview", label: "总览", icon: LayoutDashboard },
+  { to: "/market", label: "市场", icon: CandlestickChart },
   { to: "/portfolio", label: "投资组合", icon: BriefcaseBusiness },
   { to: "/orders", label: "订单与成交", icon: ReceiptText },
   { to: "/research", label: "研究", icon: FlaskConical },
@@ -60,6 +63,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/overview" replace />} />
           <Route path="/overview" element={<Overview />} />
+          <Route path="/market" element={<Market />} />
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/orders" element={<OrdersTrades />} />
           <Route path="/research" element={<Research />} />

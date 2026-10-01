@@ -60,12 +60,19 @@ from quant_system.domain.exceptions import (
 )
 from quant_system.domain.models import FillRecord
 from quant_system.domain.types import ZERO, cn_dt, new_id, to_decimal
+from quant_system.execution.gateway import SafetyGatedBrokerGateway
 from quant_system.execution.oms import Order, OrderManagementSystem
 from quant_system.execution.paper import PaperBrokerGateway
+from quant_system.risk.portfolio import (
+    CapitalAllocator,
+    PortfolioRiskControlPlane,
+    PortfolioRiskLimits,
+)
 from quant_system.risk.pretrade import (
     AvailableCashRule,
     AvailablePositionRule,
     DuplicateOrderRule,
+    GlobalPortfolioRiskRule,
     MaxActiveOrdersRule,
     MaxDailyTurnoverRule,
     MaxOrderValueRule,
@@ -75,14 +82,17 @@ from quant_system.risk.pretrade import (
     RiskContext,
     StaleMarketDataRule,
 )
-from quant_system.risk.runtime import KillSwitch
+from quant_system.risk.runtime import KillSwitch, TradingRuntime
 from quant_system.rules.reference_price import CorporateActionReferencePriceService
 from quant_system.rules.rulebook import MarketRuleBook, TradingRules
 
 StrategyResolver = Callable[[str, dict], Strategy]
 
-def default_risk_rules(cfg: dict) -> list:
-    return [
+def default_risk_rules(
+    cfg: dict,
+    portfolio_risk: PortfolioRiskControlPlane | None = None,
+) -> list:
+    rules = [
         MaxOrderValueRule(to_decimal(cfg.get("max_order_value", "2000000"))),
         MaxPositionWeightRule(to_decimal(cfg.get("max_position_weight", "0.35"))),
         MaxDailyTurnoverRule(to_decimal(cfg.get("max_daily_turnover", "1.0"))),
@@ -93,6 +103,9 @@ def default_risk_rules(cfg: dict) -> list:
         AvailableCashRule(),
         AvailablePositionRule(),
     ]
+    if portfolio_risk is not None:
+        rules.append(GlobalPortfolioRiskRule(portfolio_risk))
+    return rules
 
 
 class EventDrivenBacktestEngine:
@@ -132,10 +145,36 @@ class EventDrivenBacktestEngine:
         feed = MarketDataFeed(self._provider)
         universe_svc = UniverseService(self._provider)
         ledger = AccountLedger(f"paper:{run_id}", request.initial_cash)
-        broker = PaperBrokerGateway(request.initial_cash)
-        oms = OrderManagementSystem()
         kill_switch = KillSwitch()
-        risk_engine = PreTradeRiskEngine(default_risk_rules(self._risk_config), kill_switch)
+        runtime = TradingRuntime(kill_switch)
+        pretrade_config = self._risk_config.get("pretrade", self._risk_config)
+        portfolio_config = self._risk_config.get("portfolio", {})
+        portfolio_risk = PortfolioRiskControlPlane(
+            PortfolioRiskLimits(
+                max_gross_leverage=to_decimal(
+                    portfolio_config.get("max_gross_leverage", "1.00")
+                ),
+                max_abs_net_exposure=to_decimal(
+                    portfolio_config.get("max_abs_net_exposure", "1.00")
+                ),
+                max_margin_ratio=to_decimal(
+                    portfolio_config.get("max_margin_ratio", "0.50")
+                ),
+                max_strategy_allocation=to_decimal(
+                    portfolio_config.get("max_strategy_allocation", "1.00")
+                ),
+            ),
+            CapitalAllocator(
+                default_limit=to_decimal(
+                    portfolio_config.get("max_strategy_allocation", "1.00")
+                )
+            ),
+        )
+        broker = SafetyGatedBrokerGateway(PaperBrokerGateway(request.initial_cash), runtime)
+        oms = OrderManagementSystem(runtime)
+        risk_engine = PreTradeRiskEngine(
+            default_risk_rules(pretrade_config, portfolio_risk), runtime
+        )
         slippage = FixedBpsSlippageModel(
             to_decimal(request.slippage_model.get("bps", "5"))
             * request.transaction_cost_multiplier
@@ -284,6 +323,8 @@ class EventDrivenBacktestEngine:
                 closes=last_close, ledger=ledger, signal_id=signal_id,
             )
             today_value = ZERO
+            pending_gross_delta = ZERO
+            pending_net_delta = ZERO
             for intent in intents:
                 events.append(
                     OrderIntentEvent(
@@ -298,6 +339,8 @@ class EventDrivenBacktestEngine:
                     active_order_count=len(oms.active_orders()),
                     today_submitted_value=today_value,
                     seen_client_order_ids=seen_client_ids,
+                    pending_gross_delta=pending_gross_delta,
+                    pending_net_delta=pending_net_delta,
                 )
                 rule_violations = risk_engine.evaluate(intent, risk_ctx)
                 order = oms.create_order(intent)
@@ -370,7 +413,11 @@ class EventDrivenBacktestEngine:
                 pending.append((order, liquidity_volume))
                 seen_client_ids.add(intent.client_order_id)
                 ordered_qty += intent.quantity
-                today_value += intent.reference_price * intent.quantity
+                order_value = intent.reference_price * intent.quantity
+                today_value += order_value
+                signed_value = order_value if intent.side == OrderSide.BUY else -order_value
+                pending_gross_delta += signed_value
+                pending_net_delta += signed_value
 
         ledger.check_invariants()
         return self._finalize(
@@ -386,7 +433,7 @@ class EventDrivenBacktestEngine:
         self, *, order: Order, day: date, bars: dict, clock: HistoricalClock,
         exchange: ExchangeSimulator, fee_model: ConfigurableFeeModel,
         universe_svc: UniverseService, ledger: AccountLedger,
-        broker: PaperBrokerGateway, events: EventStore, violations: list[str],
+        broker: SafetyGatedBrokerGateway, events: EventStore, violations: list[str],
         liquidity_volume: int, corporate_actions: list,
         reference_prices: CorporateActionReferencePriceService,
     ) -> None:

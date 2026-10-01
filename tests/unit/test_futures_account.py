@@ -12,6 +12,7 @@ from quant_system.futures.domain import (
 )
 from quant_system.futures.oms import FuturesOMS
 from quant_system.futures.risk import FuturesPreTradeRisk
+from quant_system.risk.runtime import KillSwitch, TradingRuntime
 
 
 def test_open_long_and_daily_settlement_preserve_account_equity() -> None:
@@ -115,14 +116,13 @@ def test_oms_is_idempotent_and_risk_rejects_unfunded_open() -> None:
     assert oms.create(intent).order_id == oms.create(intent).order_id
     assert len(oms.all()) == 1
 
-    decision = FuturesPreTradeRisk().evaluate(
+    decision = FuturesPreTradeRisk(TradingRuntime(KillSwitch())).evaluate(
         intent=intent,
         contract=contract,
         ledger=FuturesAccountLedger(Decimal("10000")),
         mark=Decimal("3500"),
         marks={contract.symbol: Decimal("3500")},
         active_orders=0,
-        kill_switch_engaged=False,
         margin_call=False,
     )
     assert decision.approved is False

@@ -19,8 +19,8 @@ def setup_world():
     ledger = AccountLedger("t", Decimal("100000"))
     ledger.start_of_day(D)
     broker = PaperBrokerGateway(Decimal("100000"))
-    oms = OrderManagementSystem()
     runtime = TradingRuntime(KillSwitch())
+    oms = OrderManagementSystem(runtime)
     svc = ReconciliationService(broker, ledger, oms, runtime)
     return ledger, broker, oms, runtime, svc
 

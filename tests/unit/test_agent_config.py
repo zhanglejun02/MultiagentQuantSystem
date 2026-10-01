@@ -17,14 +17,18 @@ def test_default_config_routes_roles_to_different_providers(monkeypatch):
     assert researcher_provider.kind == "openai_compatible"
     assert researcher_provider.api_key_env == "MOONSHOT_API_KEY"
     assert researcher.model == "kimi-k3"
-    assert researcher.temperature == 1.0
+    assert researcher.temperature == 0.6
+    assert researcher.thinking == "disabled"
     assert critic_provider.kind == "openai_compatible"
-    assert critic.model == "deepseek-reasoner"
+    assert critic.model == "deepseek-v4-pro"
+    assert critic.thinking == "disabled"
     assert statistician_provider == critic_provider
-    assert statistician.model == "deepseek-chat"
+    assert statistician.model == "deepseek-v4-pro"
+    assert statistician.thinking == "disabled"
     assert orchestrator_provider == researcher_provider
     assert orchestrator.model == "kimi-k3"
-    assert orchestrator.temperature == 1.0
+    assert orchestrator.temperature == 0.6
+    assert orchestrator.thinking == "disabled"
 
     monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
     with pytest.raises(QuantSystemError, match="MOONSHOT_API_KEY"):

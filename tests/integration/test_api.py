@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -8,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from tests.helpers import make_engine_with
 
+from quant_system.agents.llm import LLMResponse
 from quant_system.api.app import create_app
 from quant_system.backtest.request import BacktestRequest
 from quant_system.infra.settings import Settings
@@ -22,7 +24,7 @@ def client(tmp_path: Path, provider, rulebook):
         configs_root="configs",
         fixtures_root=provider.data_dir.as_posix(),
     )
-    app = create_app(settings, init_schema=True)
+    app = create_app(settings, init_schema=True, agent_gateway=FakeAgentGateway())
     # seed one backtest into the same DB the API reads
     from quant_system.artifacts.registry import ArtifactRegistry
     from quant_system.artifacts.store import LocalArtifactStore
@@ -39,6 +41,33 @@ def client(tmp_path: Path, provider, rulebook):
         initial_cash=Decimal("1000000"),
     ))
     return TestClient(app), result
+
+
+class FakeAgentGateway:
+    responses = {
+        "researcher": {
+            "name": "20日动量",
+            "hypothesis": "中期趋势延续",
+            "expression": "rank(delta(close, 20))",
+            "horizon": 5,
+        },
+        "critic": {"approved": True, "issues": [], "rationale": "PIT-safe"},
+        "statistician": {"robust": True, "findings": ["stable"], "rationale": "usable"},
+        "orchestrator": {
+            "recommend_candidate": True,
+            "rationale": "reviews complete",
+            "next_steps": ["paper validation"],
+        },
+    }
+
+    def complete(self, role, messages):
+        return LLMResponse(
+            content=json.dumps(self.responses[role], ensure_ascii=False),
+            provider="fake",
+            model=f"fake-{role}",
+            input_tokens=10,
+            output_tokens=5,
+        )
 
 
 def test_health(client):
@@ -81,6 +110,29 @@ def test_experiment_flow(client):
     assert bad.status_code == 409
 
 
+def test_agent_research_flow(client):
+    c, _ = client
+    status = c.get("/api/agent-research/status")
+    assert status.status_code == 200
+    assert set(status.json()["roles"]) == {
+        "researcher", "critic", "statistician", "orchestrator"
+    }
+
+    response = c.post("/api/agent-research/runs", json={
+        "topic": "寻找一个可解释的中期量价因子",
+        "start_date": "2024-02-01",
+        "end_date": "2024-05-31",
+    })
+    assert response.status_code == 201
+    result = response.json()
+    assert result["experiment"]["state"] == "CANDIDATE"
+    assert [call["role"] for call in result["calls"]] == [
+        "researcher", "critic", "statistician", "orchestrator"
+    ]
+    reports = c.get("/api/agent-research/runs").json()
+    assert reports[0]["artifact_id"] == result["report_artifact_id"]
+
+
 def test_factor_registry_flow(client):
     c, _ = client
     created = c.post("/api/factors", json={
@@ -94,15 +146,17 @@ def test_factor_registry_flow(client):
     })
     assert created.status_code == 201
     factor = created.json()
-    assert factor["state"] == "DRAFT"
+    assert factor["state"] == "PROPOSED"
     assert c.get("/api/factors").json()[0]["factor_key"] == "momentum_20d"
 
-    ok = c.post(f"/api/factors/{factor['factor_id']}/transition", json={
-        "target": "VALIDATED", "reason": "PIT and stability checks passed",
+    blocked = c.post(f"/api/factors/{factor['factor_id']}/transition", json={
+        "target": "SCREENED", "reason": "manual promotion attempt",
     })
-    assert ok.status_code == 200
-    bad = c.post(f"/api/factors/{factor['factor_id']}/transition", json={"target": "ACTIVE"})
-    assert bad.status_code == 409
+    assert blocked.status_code == 409
+    retired = c.post(f"/api/factors/{factor['factor_id']}/transition", json={
+        "target": "DEPRECATED", "reason": "operator retired factor",
+    })
+    assert retired.status_code == 200
 
 
 def test_factor_evaluation_flow(client):

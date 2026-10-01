@@ -24,7 +24,8 @@ from quant_system.futures.oms import FuturesOMS
 from quant_system.futures.paper import DailyPaperMatcher
 from quant_system.futures.repository import FuturesSimulationRepository
 from quant_system.futures.risk import FuturesPreTradeRisk
-from quant_system.risk.runtime import KillSwitch
+from quant_system.risk.portfolio import RiskContribution
+from quant_system.risk.runtime import TradingRuntime
 
 
 @dataclass
@@ -51,7 +52,7 @@ class FuturesSimulationService:
         repository: FuturesSimulationRepository,
         catalog: FuturesContractCatalog,
         data: FixtureFuturesData,
-        kill_switch: KillSwitch,
+        runtime: TradingRuntime,
         *,
         risk: FuturesPreTradeRisk | None = None,
         matcher: DailyPaperMatcher | None = None,
@@ -61,8 +62,8 @@ class FuturesSimulationService:
         self.repository = repository
         self.catalog = catalog
         self.data = data
-        self.kill_switch = kill_switch
-        self.risk = risk or FuturesPreTradeRisk()
+        self.runtime = runtime
+        self.risk = risk or FuturesPreTradeRisk(runtime)
         self.matcher = matcher or DailyPaperMatcher()
         self._id_factory = id_factory
         self._now = now_provider
@@ -151,8 +152,8 @@ class FuturesSimulationService:
             mark=mark,
             marks=runtime.marks,
             active_orders=len(runtime.oms.active()),
-            kill_switch_engaged=self.kill_switch.engaged,
             margin_call=runtime.status == SimulationStatus.MARGIN_CALL,
+            portfolio_contribution=self._risk_contribution(runtime),
         )
         order = runtime.oms.create(intent)
         if decision.approved:
@@ -207,8 +208,8 @@ class FuturesSimulationService:
                 mark=bar.open,
                 marks=execution_marks,
                 active_orders=0,
-                kill_switch_engaged=self.kill_switch.engaged,
                 margin_call=runtime.status == SimulationStatus.MARGIN_CALL,
+                portfolio_contribution=self._risk_contribution(runtime),
             )
             if not decision.approved:
                 runtime.oms.reject(order.order_id, f"execution risk: {decision.reason}")
@@ -275,6 +276,29 @@ class FuturesSimulationService:
             {"trading_day": trading_day.isoformat(), "trade_ids": new_trades},
         )
         return self._public_snapshot(runtime)
+
+    def _risk_contribution(self, runtime: SimulationRuntime) -> RiskContribution:
+        gross = Decimal("0")
+        net = Decimal("0")
+        for position in runtime.ledger.positions():
+            contract = self._contracts[position.symbol]
+            notional_per_lot = runtime.marks[position.symbol] * contract.multiplier
+            gross += notional_per_lot * (
+                position.long_quantity + position.short_quantity
+            )
+            net += notional_per_lot * (
+                position.long_quantity - position.short_quantity
+            )
+        snapshot = runtime.ledger.snapshot(runtime.marks)
+        return RiskContribution(
+            account_id=f"futures:{runtime.simulation_id}",
+            strategy_id=f"futures:{runtime.simulation_id}",
+            asset_class="FUTURES",
+            nav=snapshot.equity,
+            gross_exposure=gross,
+            net_exposure=net,
+            margin=snapshot.margin,
+        )
 
     def _load(self, simulation_id: str) -> SimulationRuntime:
         state, seq, final_hash = self.repository.get_state(simulation_id)

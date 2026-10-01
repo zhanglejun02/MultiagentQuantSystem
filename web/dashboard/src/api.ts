@@ -31,6 +31,48 @@ export interface Artifact {
   status: string;
 }
 
+export interface MarketDataStatus {
+  ready: boolean;
+  latest_trade_date: string | null;
+  stale: boolean;
+  quality_status: string | null;
+  quality_report_id: string | null;
+  market_snapshot_id: string | null;
+  data_snapshot_id: string | null;
+}
+
+export interface DominantFuturesContract {
+  product: string;
+  symbol: string;
+  close: number;
+  settlement: number;
+  return: number;
+  volume: number;
+  open_interest: number;
+}
+
+export interface MarketSnapshotPayload {
+  schema_version: string;
+  trade_date: string;
+  equity: {
+    symbols: number;
+    advancers: number;
+    decliners: number;
+    unchanged: number;
+    median_return: number;
+    total_amount: number;
+  };
+  futures: {
+    contracts: number;
+    dominant_contracts: DominantFuturesContract[];
+  };
+}
+
+export interface MarketSnapshotResponse {
+  artifact: Artifact;
+  snapshot: MarketSnapshotPayload;
+}
+
 export interface EquityPoint {
   date: string;
   cash: string;
@@ -97,6 +139,51 @@ export interface Experiment {
   state: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentResearchStatus {
+  ready: boolean;
+  providers: Record<string, boolean>;
+  roles: Record<string, { provider: string; model: string }>;
+  budget: {
+    max_candidates_per_run: number;
+    max_llm_calls_per_run: number;
+    max_total_tokens_per_run: number;
+    max_cost_usd_per_run: number;
+  };
+  factor_validation: {
+    min_ic_days: number;
+    min_coverage: number;
+    min_abs_rank_ic: number;
+  };
+}
+
+export interface AgentResearchRequest {
+  topic: string;
+  universe_id: string;
+  start_date: string;
+  end_date: string;
+  target: string;
+}
+
+export interface AgentResearchResult {
+  trace_id: string;
+  experiment: Experiment;
+  experiment_run: { run_id: string; status: string; metrics: Record<string, unknown> };
+  factor_run: FactorRun;
+  candidate: { name: string; hypothesis: string; expression: string; horizon: number };
+  critic: { approved: boolean; issues: string[]; rationale: string };
+  statistician: { robust: boolean; findings: string[]; rationale: string };
+  decision: { recommend_candidate: boolean; rationale: string; next_steps: string[] };
+  local_gates: Record<string, boolean>;
+  report_artifact_id: string;
+  calls: {
+    role: string;
+    provider: string;
+    model: string;
+    input_tokens: number | null;
+    output_tokens: number | null;
+  }[];
 }
 
 export interface SystemStatus {
@@ -257,7 +344,14 @@ export interface FuturesBacktestResult {
   metrics: FuturesBacktestArtifact["metadata"]["metrics"];
 }
 
-export type FactorState = "DRAFT" | "VALIDATED" | "APPROVED" | "ACTIVE" | "DEPRECATED";
+export type FactorState =
+  | "PROPOSED"
+  | "SCREENED"
+  | "CANDIDATE"
+  | "VALIDATING"
+  | "VALIDATED"
+  | "STRATEGY_ELIGIBLE"
+  | "DEPRECATED";
 
 export interface Factor {
   factor_id: string;
@@ -320,11 +414,18 @@ export interface FactorEvaluateRequest {
 
 export const api = {
   health: () => get<{ status: string; db: string; time: string }>("/api/health"),
+  marketDataStatus: () => get<MarketDataStatus>("/api/market-data/status"),
+  marketSnapshots: () => get<Artifact[]>("/api/market-snapshots"),
+  latestMarketSnapshot: () => get<MarketSnapshotResponse>("/api/market-snapshots/latest"),
   artifacts: (type?: string) =>
     get<Artifact[]>(`/api/artifacts${type ? `?artifact_type=${type}` : ""}`),
   lineage: (id: string) =>
     get<{ ancestors: Artifact[]; descendants: Artifact[] }>(`/api/artifacts/${id}/lineage`),
   experiments: () => get<Experiment[]>("/api/experiments"),
+  agentResearchStatus: () => get<AgentResearchStatus>("/api/agent-research/status"),
+  agentResearchRuns: () => get<Artifact[]>("/api/agent-research/runs"),
+  runAgentResearch: (body: AgentResearchRequest) =>
+    post<AgentResearchResult>("/api/agent-research/runs", body),
   backtests: () => get<Artifact[]>("/api/backtests"),
   metrics: (id: string) => get<Metrics>(`/api/backtests/${id}/metrics`),
   equity: (id: string) => get<EquityPoint[]>(`/api/backtests/${id}/equity`),

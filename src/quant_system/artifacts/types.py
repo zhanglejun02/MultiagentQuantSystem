@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from quant_system.artifacts.envelope import ArtifactEnvelope, hash_json
-from quant_system.domain.enums import ArtifactType
+from quant_system.domain.enums import ArtifactStatus, ArtifactType
 
 
 def _make(
@@ -24,6 +24,7 @@ def _make(
     code_commit: str = "unknown",
     config: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
+    status: ArtifactStatus = ArtifactStatus.REGISTERED,
 ) -> ArtifactEnvelope:
     return ArtifactEnvelope(
         artifact_type=artifact_type,
@@ -36,11 +37,24 @@ def _make(
         code_commit=code_commit,
         config_hash=hash_json(config) if config else "",
         metadata=metadata or {},
+        status=status,
     )
 
 
 def data_snapshot_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
     return _make(ArtifactType.DATA_SNAPSHOT, producer, **kw)
+
+
+def data_quality_report_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
+    return _make(ArtifactType.DATA_QUALITY_REPORT, producer, **kw)
+
+
+def market_snapshot_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
+    return _make(ArtifactType.MARKET_SNAPSHOT, producer, **kw)
+
+
+def daily_market_brief_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
+    return _make(ArtifactType.DAILY_MARKET_BRIEF, producer, **kw)
 
 
 def universe_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
@@ -98,3 +112,15 @@ def deployment_proposal_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
 
 def research_report_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
     return _make(ArtifactType.RESEARCH_REPORT, producer, **kw)
+
+
+def signal_spec_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
+    return _make(ArtifactType.SIGNAL_SPEC, producer, **kw)
+
+
+def portfolio_construction_spec_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
+    return _make(ArtifactType.PORTFOLIO_CONSTRUCTION_SPEC, producer, **kw)
+
+
+def strategy_spec_artifact(producer: str, **kw: Any) -> ArtifactEnvelope:
+    return _make(ArtifactType.STRATEGY_SPEC, producer, **kw)

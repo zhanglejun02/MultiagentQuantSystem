@@ -13,6 +13,7 @@ dependencies = [
     "duckdb>=0.10",
     "PyYAML>=6.0",
     "certifi>=2024.2.2",
+    "pycurl>=7.45",
 ]
 
 [project.optional-dependencies]

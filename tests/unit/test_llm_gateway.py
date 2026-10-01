@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
+import json
 
 import certifi
 
@@ -19,36 +19,71 @@ def _config(provider: str, kind: str, key_env: str = "TEST_LLM_KEY") -> AgentLLM
             }
         },
         "roles": {
-            "researcher": {"provider": provider, "model": "test-model"},
+            "researcher": {
+                "provider": provider,
+                "model": "test-model",
+                "thinking": "disabled",
+            },
         },
     })
 
 
 def test_http_transport_uses_certifi_ca(monkeypatch):
-    captured = {}
-    ssl_context = object()
+    captured = {"options": {}}
 
-    class Response:
+    class Curl:
+        def setopt(self, option, value):
+            captured["options"][option] = value
+
+        def perform(self):
+            captured["options"][llm.pycurl.WRITEDATA].write(b'{"ok": true}')
+
         @staticmethod
-        def read() -> bytes:
-            return b'{"ok": true}'
+        def getinfo(option):
+            return 200
 
-    def create_default_context(*, cafile):
-        captured["cafile"] = cafile
-        return ssl_context
+        @staticmethod
+        def close():
+            pass
 
-    def urlopen(request, *, timeout, context):
-        captured.update(request=request, timeout=timeout, context=context)
-        return nullcontext(Response())
-
-    monkeypatch.setattr(llm.ssl, "create_default_context", create_default_context)
-    monkeypatch.setattr(llm, "urlopen", urlopen)
+    monkeypatch.setattr(llm.pycurl, "Curl", Curl)
 
     payload = llm._http_transport("https://llm.example", {}, {"ping": True}, 10)
 
     assert payload == {"ok": True}
-    assert captured["cafile"] == certifi.where()
-    assert captured["context"] is ssl_context
+    assert captured["options"][llm.pycurl.CAINFO] == certifi.where().encode()
+    assert json.loads(captured["options"][llm.pycurl.POSTFIELDS]) == {"ping": True}
+
+
+def test_http_transport_retries_transient_connection_failure(monkeypatch):
+    attempts = 0
+
+    class Curl:
+        def __init__(self):
+            self.options = {}
+
+        def setopt(self, option, value):
+            self.options[option] = value
+
+        def perform(self):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise llm.pycurl.error(35, "connection reset")
+            self.options[llm.pycurl.WRITEDATA].write(b'{"ok": true}')
+
+        @staticmethod
+        def getinfo(option):
+            return 200
+
+        @staticmethod
+        def close():
+            pass
+
+    monkeypatch.setattr(llm.pycurl, "Curl", Curl)
+
+    assert llm._http_transport("https://llm.example", {}, {"ping": True}, 10) == {"ok": True}
+    assert attempts == 2
 
 
 def test_openai_compatible_gateway_builds_request(monkeypatch):
@@ -69,6 +104,7 @@ def test_openai_compatible_gateway_builds_request(monkeypatch):
     assert captured["url"] == "https://llm.example/chat/completions"
     assert captured["headers"]["Authorization"] == "Bearer secret"
     assert captured["body"]["model"] == "test-model"
+    assert captured["body"]["thinking"] == {"type": "disabled"}
     assert response.content == "candidate"
     assert response.input_tokens == 12
 

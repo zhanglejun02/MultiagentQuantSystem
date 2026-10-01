@@ -1,5 +1,13 @@
-import { useState } from "react";
-import { Artifact, Experiment, api } from "../api";
+import { FormEvent, useState } from "react";
+import { Bot, CheckCircle2, CircleAlert, Play, ShieldCheck } from "lucide-react";
+import {
+  AgentResearchRequest,
+  AgentResearchResult,
+  Artifact,
+  Experiment,
+  api,
+  fmt,
+} from "../api";
 import DataTable, { Column } from "../components/DataTable";
 import { useAsync } from "../hooks";
 
@@ -10,7 +18,19 @@ const ARTIFACT_TYPES = [
 ];
 
 export default function Research() {
-  const { data: experiments, error: expError } = useAsync(() => api.experiments(), []);
+  const [refresh, setRefresh] = useState(0);
+  const { data: experiments, error: expError } = useAsync(() => api.experiments(), [refresh]);
+  const { data: agentStatus, error: statusError } = useAsync(() => api.agentResearchStatus(), []);
+  const [request, setRequest] = useState<AgentResearchRequest>({
+    topic: "寻找一个可解释、低换手且严格避免未来数据的 A 股量价因子",
+    universe_id: "cn_a_all",
+    start_date: "2024-02-01",
+    end_date: "2024-05-31",
+    target: "NEXT_OPEN_TO_CLOSE",
+  });
+  const [agentResult, setAgentResult] = useState<AgentResearchResult | null>(null);
+  const [running, setRunning] = useState(false);
+  const [runError, setRunError] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const { data: artifacts } = useAsync(() => api.artifacts(typeFilter || undefined), [typeFilter]);
   const [lineageId, setLineageId] = useState<string | null>(null);
@@ -18,6 +38,21 @@ export default function Research() {
     () => (lineageId ? api.lineage(lineageId) : Promise.resolve(null)),
     [lineageId]
   );
+
+  async function runAgents(event: FormEvent) {
+    event.preventDefault();
+    setRunning(true);
+    setRunError("");
+    try {
+      const result = await api.runAgentResearch(request);
+      setAgentResult(result);
+      setRefresh((value) => value + 1);
+    } catch (caught) {
+      setRunError(caught instanceof Error ? caught.message : "多智能体研究运行失败");
+    } finally {
+      setRunning(false);
+    }
+  }
 
   const expCols: Column<Experiment>[] = [
     { key: "experiment_id", title: "ID", render: (r) => <span className="mono">{r.experiment_id}</span> },
@@ -45,9 +80,61 @@ export default function Research() {
   ];
 
   return (
-    <div>
-      <h1>Research</h1>
-      {expError && <div className="error-box">{expError}</div>}
+    <div className="agent-research-page">
+      <header className="agent-header">
+        <div>
+          <span className="eyebrow"><Bot size={13} /> RESEARCH PLANE</span>
+          <h1>多智能体研究</h1>
+          <p>四角色协作提出与审查因子，本地确定性引擎负责最终验证。</p>
+        </div>
+        <span className={`agent-ready ${agentStatus?.ready ? "ready" : ""}`}>
+          {agentStatus?.ready ? <CheckCircle2 size={15} /> : <CircleAlert size={15} />}
+          {agentStatus?.ready ? "模型已就绪" : "等待模型凭据"}
+        </span>
+      </header>
+
+      {(expError || statusError || runError) && <div className="error-box">{expError || statusError || runError}</div>}
+
+      <section className="agent-console">
+        <form onSubmit={runAgents}>
+          <div className="section-heading">
+            <div><h2>研究任务</h2><p>一次运行生成一个 DSL 候选，所有模型调用均受预算限制。</p></div>
+            <ShieldCheck size={19} />
+          </div>
+          <label>研究主题<textarea required minLength={3} maxLength={500} value={request.topic} onChange={(event) => setRequest({ ...request, topic: event.target.value })} /></label>
+          <div className="agent-run-fields">
+            <label>开始日期<input type="date" value={request.start_date} onChange={(event) => setRequest({ ...request, start_date: event.target.value })} /></label>
+            <label>结束日期<input type="date" value={request.end_date} onChange={(event) => setRequest({ ...request, end_date: event.target.value })} /></label>
+            <label>预测目标<select value={request.target} onChange={(event) => setRequest({ ...request, target: event.target.value })}><option value="NEXT_OPEN_TO_CLOSE">次日开盘至收盘</option><option value="NEXT_CLOSE_TO_CLOSE">收盘至收盘</option><option value="NEXT_OPEN_TO_NEXT_OPEN">开盘至开盘</option></select></label>
+          </div>
+          <button className="primary agent-run-button" disabled={running || !agentStatus?.ready}>
+            <Play size={15} /> {running ? "四个 Agent 协作中…" : "启动研究闭环"}
+          </button>
+        </form>
+        <div className="agent-role-list">
+          {Object.entries(agentStatus?.roles ?? {}).map(([role, route], index) => (
+            <div key={role}><span>{index + 1}</span><div><strong>{role}</strong><small>{route.provider} · {route.model}</small></div></div>
+          ))}
+        </div>
+      </section>
+
+      {agentResult && <section className="agent-result">
+        <div className="section-heading"><div><h2>{agentResult.candidate.name}</h2><p className="mono">{agentResult.trace_id}</p></div><span className={`badge ${agentResult.experiment.state === "CANDIDATE" ? "ok" : "err"}`}>{agentResult.experiment.state}</span></div>
+        <div className="agent-expression mono">{agentResult.candidate.expression}</div>
+        <p>{agentResult.candidate.hypothesis}</p>
+        <div className="agent-metrics">
+          <div><span>Rank IC</span><strong>{fmt.num(agentResult.factor_run.metrics.rank_ic, 4)}</strong></div>
+          <div><span>ICIR</span><strong>{fmt.num(agentResult.factor_run.metrics.icir, 3)}</strong></div>
+          <div><span>覆盖率</span><strong>{fmt.pct(agentResult.factor_run.metrics.coverage)}</strong></div>
+          <div><span>换手率</span><strong>{fmt.pct(agentResult.factor_run.metrics.turnover)}</strong></div>
+        </div>
+        <div className="agent-verdicts">
+          <div><strong>Critic</strong><span>{agentResult.critic.rationale}</span></div>
+          <div><strong>Statistician</strong><span>{agentResult.statistician.rationale}</span></div>
+          <div><strong>Orchestrator</strong><span>{agentResult.decision.rationale}</span></div>
+          <div><strong>Local gates</strong><span>{Object.entries(agentResult.local_gates).map(([key, passed]) => `${key}: ${passed ? "PASS" : "FAIL"}`).join(" · ")}</span></div>
+        </div>
+      </section>}
 
       <h2>实验（生命周期状态机）</h2>
       <div className="panel">

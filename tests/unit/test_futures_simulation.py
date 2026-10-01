@@ -8,7 +8,7 @@ from quant_system.futures.domain import Direction, FuturesOrderIntent, Offset
 from quant_system.futures.repository import FuturesSimulationRepository
 from quant_system.futures.service import FuturesSimulationService
 from quant_system.infra.db import create_all, make_engine, make_session_factory
-from quant_system.risk.runtime import KillSwitch
+from quant_system.risk.runtime import KillSwitch, TradingRuntime
 
 
 def _service(tmp_path: Path) -> FuturesSimulationService:
@@ -20,7 +20,7 @@ def _service(tmp_path: Path) -> FuturesSimulationService:
         repository,
         catalog,
         FixtureFuturesData(),
-        KillSwitch(),
+        TradingRuntime(KillSwitch()),
     )
 
 

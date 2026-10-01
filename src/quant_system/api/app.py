@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from decimal import Decimal
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
@@ -16,11 +17,18 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from quant_system.agents.config import load_agent_llm_config
+from quant_system.agents.llm import LLMGateway
+from quant_system.agents.orchestration import (
+    AgentResearchOrchestrator,
+    AgentResearchRequest,
+    CompletionGateway,
+)
 from quant_system.artifacts.lineage import ArtifactLineageService
 from quant_system.artifacts.registry import ArtifactRegistry
 from quant_system.artifacts.store import LocalArtifactStore
 from quant_system.data.providers.local_parquet import LocalParquetProvider
-from quant_system.domain.enums import ArtifactType, ExperimentState, FactorState
+from quant_system.domain.enums import ArtifactType, ExperimentState, FactorState, StrategyState
 from quant_system.domain.exceptions import (
     ArtifactNotFoundError,
     InvalidTransitionError,
@@ -38,11 +46,19 @@ from quant_system.futures.domain import (
     Offset,
 )
 from quant_system.futures.repository import FuturesSimulationRepository
+from quant_system.futures.risk import FuturesPreTradeRisk
 from quant_system.futures.service import FuturesSimulationService
 from quant_system.infra.db import create_all, make_engine, make_session_factory
 from quant_system.infra.settings import Settings
 from quant_system.research.experiments import ExperimentService
+from quant_system.research.factor_promotion import FactorPromotionService
 from quant_system.research.factors import FactorRegistry
+from quant_system.research.strategies import (
+    StrategyPromotionEvidence,
+    StrategyPromotionService,
+    StrategyRegistry,
+)
+from quant_system.risk.portfolio import PortfolioRiskControlPlane
 from quant_system.risk.runtime import KillSwitch, TradingRuntime
 
 
@@ -75,6 +91,25 @@ class FactorTransitionRequest(BaseModel):
     target: FactorState
     reason: str = ""
     actor: str = "dashboard"
+
+
+class FactorPromotionRequest(BaseModel):
+    target: FactorState
+    validation_artifact_id: str
+
+
+class StrategyCreate(BaseModel):
+    strategy_key: str
+    version: str
+    package_artifact_id: str
+    factor_ids: list[str]
+
+
+class StrategyPromotionRequest(BaseModel):
+    target: StrategyState
+    backtest_result_artifact_id: str = ""
+    validation_report_artifact_id: str = ""
+    approved_by: str = ""
 
 
 class FactorEvaluateRequest(BaseModel):
@@ -124,19 +159,41 @@ def _read_jsonl(path: Path, limit: int) -> list[dict]:
     return out
 
 
-def create_app(settings: Settings | None = None, *, init_schema: bool = False) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    init_schema: bool = False,
+    agent_gateway: CompletionGateway | None = None,
+) -> FastAPI:
     settings = settings or Settings.from_env()
     engine = make_engine(settings.db_url)
     if init_schema:
         create_all(engine)
     session_factory = make_session_factory(engine)
     registry = ArtifactRegistry(session_factory)
+    artifact_store = LocalArtifactStore(settings.artifacts_root)
     lineage = ArtifactLineageService(registry)
     experiments = ExperimentService(session_factory)
     factors = FactorRegistry(session_factory)
+    factor_promotion = FactorPromotionService(factors, registry)
     factor_lab = FactorLab(session_factory, LocalParquetProvider(settings.fixtures_root))
+    agent_config = load_agent_llm_config(
+        Path(settings.configs_root) / "agents" / "default.yaml"
+    )
+    agent_research = AgentResearchOrchestrator(
+        config=agent_config,
+        gateway=agent_gateway or LLMGateway(agent_config),
+        experiments=experiments,
+        factor_lab=factor_lab,
+        registry=registry,
+    )
     kill_switch = KillSwitch()
     runtime = TradingRuntime(kill_switch)
+    portfolio_risk = PortfolioRiskControlPlane()
+    strategies = StrategyRegistry(session_factory)
+    strategy_promotion = StrategyPromotionService(
+        strategies, factors, registry, runtime
+    )
     futures_repository = FuturesSimulationRepository(session_factory)
     futures_catalog = FuturesContractCatalog.from_yaml(
         Path(settings.configs_root) / "futures" / "contracts.yaml"
@@ -145,12 +202,13 @@ def create_app(settings: Settings | None = None, *, init_schema: bool = False) -
         futures_repository,
         futures_catalog,
         FixtureFuturesData(),
-        kill_switch,
+        runtime,
+        risk=FuturesPreTradeRisk(runtime, portfolio_risk=portfolio_risk),
     )
     futures_backtest_engine = FuturesBacktestEngine(
         catalog=futures_catalog,
         data=FixtureFuturesData(),
-        store=LocalArtifactStore(settings.artifacts_root),
+        store=artifact_store,
         registry=registry,
     )
 
@@ -205,6 +263,74 @@ def create_app(settings: Settings | None = None, *, init_schema: bool = False) -
             "descendants": [_env_to_dict(d) for d in graph["descendants"]],
         }
 
+    # -- daily market data ---------------------------------------------------
+    def _latest_artifact(artifact_type: ArtifactType):
+        artifacts = registry.find_by_type(artifact_type)
+        return max(artifacts, key=lambda artifact: artifact.created_at) if artifacts else None
+
+    def _market_snapshot_payload(artifact_id: str) -> dict[str, Any]:
+        try:
+            artifact = registry.get(artifact_id)
+        except ArtifactNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        if artifact.artifact_type != ArtifactType.MARKET_SNAPSHOT:
+            raise HTTPException(400, f"{artifact_id} is not a market snapshot")
+        try:
+            payload = artifact_store.get_json(artifact.uri)
+        except ArtifactNotFoundError as exc:
+            raise HTTPException(
+                500, f"market snapshot content is missing: {artifact.uri}"
+            ) from exc
+        except (JSONDecodeError, UnicodeDecodeError) as exc:
+            raise HTTPException(
+                500, f"market snapshot content is malformed: {artifact.uri}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(
+                500, f"market snapshot content is not an object: {artifact.uri}"
+            )
+        return {"artifact": _env_to_dict(artifact), "snapshot": payload}
+
+    @app.get("/api/market-data/status")
+    def market_data_status() -> dict[str, Any]:
+        quality = _latest_artifact(ArtifactType.DATA_QUALITY_REPORT)
+        snapshot = _latest_artifact(ArtifactType.MARKET_SNAPSHOT)
+        if snapshot is not None:
+            _market_snapshot_payload(snapshot.artifact_id)
+        latest_trade_date = snapshot.metadata.get("trade_date") if snapshot else None
+        stale = True
+        if isinstance(latest_trade_date, str):
+            stale = (utc_now().date() - date.fromisoformat(latest_trade_date)).days > 4
+        return {
+            "ready": snapshot is not None,
+            "latest_trade_date": latest_trade_date,
+            "stale": stale,
+            "quality_status": quality.status.value if quality else None,
+            "quality_report_id": quality.artifact_id if quality else None,
+            "market_snapshot_id": snapshot.artifact_id if snapshot else None,
+            "data_snapshot_id": snapshot.data_snapshot_id if snapshot else None,
+        }
+
+    @app.get("/api/market-snapshots")
+    def list_market_snapshots() -> list[dict[str, Any]]:
+        snapshots = registry.find_by_type(ArtifactType.MARKET_SNAPSHOT)
+        return sorted(
+            (_env_to_dict(snapshot) for snapshot in snapshots),
+            key=lambda item: item["created_at"],
+            reverse=True,
+        )
+
+    @app.get("/api/market-snapshots/latest")
+    def latest_market_snapshot() -> dict[str, Any]:
+        snapshot = _latest_artifact(ArtifactType.MARKET_SNAPSHOT)
+        if snapshot is None:
+            raise HTTPException(404, "no market snapshots")
+        return _market_snapshot_payload(snapshot.artifact_id)
+
+    @app.get("/api/market-snapshots/{artifact_id}")
+    def get_market_snapshot(artifact_id: str) -> dict[str, Any]:
+        return _market_snapshot_payload(artifact_id)
+
     # -- experiments -----------------------------------------------------------
     @app.get("/api/experiments")
     def list_experiments() -> list[dict]:
@@ -234,6 +360,37 @@ def create_app(settings: Settings | None = None, *, init_schema: bool = False) -
     def experiment_runs(experiment_id: str) -> list[dict]:
         return [r.model_dump(mode="json") for r in experiments.runs(experiment_id)]
 
+    # -- multi-agent research -------------------------------------------------
+    @app.get("/api/agent-research/status")
+    def agent_research_status() -> dict:
+        return {
+            "ready": all(agent_config.credential_status().values()),
+            "providers": agent_config.credential_status(),
+            "roles": {
+                role: {"provider": route.provider, "model": route.model}
+                for role, route in agent_config.roles.items()
+            },
+            "budget": agent_config.research_budget.model_dump(),
+            "factor_validation": agent_config.factor_validation.model_dump(),
+        }
+
+    @app.get("/api/agent-research/runs")
+    def list_agent_research_runs() -> list[dict]:
+        reports = registry.find_by_type(ArtifactType.RESEARCH_REPORT)
+        return sorted(
+            (_env_to_dict(report) for report in reports),
+            key=lambda item: item["created_at"],
+            reverse=True,
+        )
+
+    @app.post("/api/agent-research/runs", status_code=201)
+    def run_agent_research(body: AgentResearchRequest) -> dict:
+        try:
+            result = agent_research.run(body)
+        except QuantSystemError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return result.model_dump(mode="json")
+
     # -- factors ---------------------------------------------------------------
     @app.get("/api/factors")
     def list_factors() -> list[dict]:
@@ -259,6 +416,16 @@ def create_app(settings: Settings | None = None, *, init_schema: bool = False) -
             raise HTTPException(404, str(exc)) from exc
         return factor.model_dump(mode="json")
 
+    @app.post("/api/factors/{factor_id}/promote")
+    def promote_factor(factor_id: str, body: FactorPromotionRequest) -> dict:
+        try:
+            factor = factor_promotion.promote(
+                factor_id, body.target, body.validation_artifact_id
+            )
+        except (InvalidTransitionError, QuantSystemError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return factor.model_dump(mode="json")
+
     @app.get("/api/factors/{factor_id}/history")
     def factor_history(factor_id: str) -> list[dict]:
         return factors.history(factor_id)
@@ -274,6 +441,35 @@ def create_app(settings: Settings | None = None, *, init_schema: bool = False) -
         except (QuantSystemError, ValueError, FileNotFoundError) as exc:
             raise HTTPException(422, str(exc)) from exc
         return run.model_dump(mode="json")
+
+    # -- strategies -----------------------------------------------------------
+    @app.post("/api/strategies", status_code=201)
+    def create_strategy(body: StrategyCreate) -> dict:
+        try:
+            strategy = strategies.create(**body.model_dump())
+        except QuantSystemError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return strategy.model_dump(mode="json")
+
+    @app.post("/api/strategies/{strategy_id}/promote")
+    def promote_strategy(strategy_id: str, body: StrategyPromotionRequest) -> dict:
+        try:
+            strategy = strategy_promotion.promote(
+                strategy_id,
+                body.target,
+                StrategyPromotionEvidence(
+                    backtest_result_artifact_id=body.backtest_result_artifact_id,
+                    validation_report_artifact_id=body.validation_report_artifact_id,
+                    approved_by=body.approved_by,
+                ),
+            )
+        except (InvalidTransitionError, QuantSystemError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return strategy.model_dump(mode="json")
+
+    @app.get("/api/strategies/{strategy_id}/history")
+    def strategy_history(strategy_id: str) -> list[dict]:
+        return strategies.history(strategy_id)
 
     # -- backtests ---------------------------------------------------------------
     @app.get("/api/backtests")
@@ -447,6 +643,7 @@ def create_app(settings: Settings | None = None, *, init_schema: bool = False) -
     def system_status() -> dict:
         snapshots = registry.find_by_type(ArtifactType.DATA_SNAPSHOT)
         results = registry.find_by_type(ArtifactType.BACKTEST_RESULT)
+        portfolio_snapshot = portfolio_risk.snapshot()
         return {
             "runtime_state": runtime.state.value,
             "kill_switch": kill_switch.engaged,
@@ -461,6 +658,20 @@ def create_app(settings: Settings | None = None, *, init_schema: bool = False) -
             "futures_gateway": "LOCAL_PAPER",
             "paper_broker": "SIMULATED",
             "oms": "IDLE",
+            "portfolio_risk": {
+                "total_nav": str(portfolio_snapshot.total_nav),
+                "gross_exposure": str(portfolio_snapshot.gross_exposure),
+                "net_exposure": str(portfolio_snapshot.net_exposure),
+                "margin": str(portfolio_snapshot.margin),
+                "strategy_gross_exposure": {
+                    key: str(value)
+                    for key, value in portfolio_snapshot.strategy_gross_exposure.items()
+                },
+                "asset_class_gross_exposure": {
+                    key: str(value)
+                    for key, value in portfolio_snapshot.asset_class_gross_exposure.items()
+                },
+            },
             "heartbeat": utc_now().isoformat(),
         }
 

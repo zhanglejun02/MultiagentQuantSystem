@@ -11,6 +11,7 @@ from quant_system.domain.enums import Board, Exchange, OrderSide, OrderType, Sec
 from quant_system.domain.models import Bar, CorporateActionRecord, OrderIntent
 from quant_system.domain.types import bar_available_at, cn_dt
 from quant_system.execution.oms import OrderManagementSystem
+from quant_system.risk.runtime import KillSwitch, TradingRuntime
 from quant_system.rules.reference_price import CorporateActionReferencePriceService
 
 D = date(2024, 3, 4)
@@ -25,7 +26,7 @@ def make_bar(open_: str = "10.00", volume: int = 1_000_000) -> Bar:
 
 
 def make_order(qty: int = 10000, side: OrderSide = OrderSide.BUY):
-    oms = OrderManagementSystem()
+    oms = OrderManagementSystem(TradingRuntime(KillSwitch()))
     return oms.create_order(OrderIntent(
         client_order_id="c1", strategy_id="s", target_id="t", account_id="a",
         symbol="600000.SSE", side=side, order_type=OrderType.MARKET,

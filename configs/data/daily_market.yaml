@@ -1,0 +1,15 @@
+schema_version: "1.0"
+source: tushare_pro
+markets:
+  equity_exchanges: [SSE, SZSE]
+  futures_exchanges: [CFFEX, SHFE, INE, DCE, CZCE, GFEX]
+datasets:
+  required: [trade_calendar, equity_daily]
+  optional: [adj_factor, suspensions, name_changes, index_daily]
+quality:
+  minimum_equity_coverage: 0.95
+schedule:
+  timezone: Asia/Shanghai
+  primary: "18:30"
+  retries: ["19:30", "20:30"]
+  daily_brief: "21:30"
