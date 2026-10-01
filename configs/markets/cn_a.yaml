@@ -33,7 +33,7 @@ boards:
     order_types: ["LIMIT", "MARKET"]
   CHINEXT:
     tick_size: "0.01"
-    lot_size: 100
+    lot_size: 1000
     price_limit: "0.20"
     st_price_limit: "0.20"
     ipo_no_limit_days: 5
