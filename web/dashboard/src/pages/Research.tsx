@@ -1,5 +1,20 @@
 import { FormEvent, useState } from "react";
-import { Bot, CheckCircle2, CircleAlert, Play, ShieldCheck } from "lucide-react";
+import {
+  Bot,
+  BrainCircuit,
+  Calculator,
+  CheckCircle2,
+  CircleAlert,
+  FileCheck2,
+  FlaskConical,
+  GitMerge,
+  Lightbulb,
+  Play,
+  ScanSearch,
+  ShieldCheck,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
 import {
   AgentResearchRequest,
   AgentResearchResult,
@@ -17,6 +32,33 @@ const ARTIFACT_TYPES = [
   "STRATEGY_PACKAGE", "DEPLOYMENT", "RESEARCH_REPORT",
 ];
 
+type WorkflowStageId =
+  | "researcher"
+  | "critic"
+  | "factor_lab"
+  | "statistician"
+  | "local_gates"
+  | "orchestrator"
+  | "report";
+
+type WorkflowStage = {
+  id: WorkflowStageId;
+  label: string;
+  eyebrow: string;
+  description: string;
+  icon: LucideIcon;
+};
+
+const WORKFLOW_STAGES: WorkflowStage[] = [
+  { id: "researcher", label: "Researcher", eyebrow: "IDEA", description: "提出结构化因子候选与经济假设", icon: Lightbulb },
+  { id: "critic", label: "Critic", eyebrow: "REVIEW", description: "审查 PIT 安全、DSL 风险与过拟合", icon: ScanSearch },
+  { id: "factor_lab", label: "FactorLab", eyebrow: "LOCAL", description: "本地确定性计算 IC、覆盖率与换手", icon: Calculator },
+  { id: "statistician", label: "Statistician", eyebrow: "EVIDENCE", description: "只解释本地引擎已经产生的指标", icon: FlaskConical },
+  { id: "local_gates", label: "Local gates", eyebrow: "HARD GATE", description: "本地门槛拥有最终否决权，LLM 不可覆盖", icon: ShieldCheck },
+  { id: "orchestrator", label: "Orchestrator", eyebrow: "DECISION", description: "汇总证据并给出候选晋级建议", icon: GitMerge },
+  { id: "report", label: "Research report", eyebrow: "ARTIFACT", description: "固化调用轨迹、结论与可追溯产物", icon: FileCheck2 },
+];
+
 export default function Research() {
   const [refresh, setRefresh] = useState(0);
   const { data: experiments, error: expError } = useAsync(() => api.experiments(), [refresh]);
@@ -29,6 +71,7 @@ export default function Research() {
     target: "NEXT_OPEN_TO_CLOSE",
   });
   const [agentResult, setAgentResult] = useState<AgentResearchResult | null>(null);
+  const [selectedStageId, setSelectedStageId] = useState<WorkflowStageId>("researcher");
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -38,6 +81,40 @@ export default function Research() {
     () => (lineageId ? api.lineage(lineageId) : Promise.resolve(null)),
     [lineageId]
   );
+
+  const selectedStage = WORKFLOW_STAGES.find((stage) => stage.id === selectedStageId) ?? WORKFLOW_STAGES[0];
+  const selectedRoute = selectedStageId in (agentStatus?.roles ?? {})
+    ? agentStatus?.roles[selectedStageId]
+    : undefined;
+  const selectedCalls = agentResult?.calls.filter((call) => call.role === selectedStageId) ?? [];
+  const selectedTokens = selectedCalls.reduce(
+    (total, call) => total + (call.input_tokens ?? 0) + (call.output_tokens ?? 0),
+    0
+  );
+  const totalTokens = agentResult?.calls.reduce(
+    (total, call) => total + (call.input_tokens ?? 0) + (call.output_tokens ?? 0),
+    0
+  ) ?? 0;
+
+  function stageStatus(stageId: WorkflowStageId) {
+    if (!agentResult) return running ? (stageId === "researcher" ? "active" : "queued") : "ready";
+    if (stageId === "critic") return agentResult.critic.approved ? "complete" : "warning";
+    if (stageId === "statistician") return agentResult.statistician.robust ? "complete" : "warning";
+    if (stageId === "local_gates") return Object.values(agentResult.local_gates).every(Boolean) ? "complete" : "warning";
+    if (stageId === "orchestrator") return agentResult.decision.recommend_candidate ? "complete" : "warning";
+    return "complete";
+  }
+
+  function stageOutcome(stageId: WorkflowStageId) {
+    if (!agentResult) return selectedRoute ? `${selectedRoute.provider} · ${selectedRoute.model}` : "等待研究运行";
+    if (stageId === "researcher") return agentResult.candidate.hypothesis;
+    if (stageId === "critic") return agentResult.critic.rationale;
+    if (stageId === "factor_lab") return `Rank IC ${fmt.num(agentResult.factor_run.metrics.rank_ic, 4)} · 覆盖率 ${fmt.pct(agentResult.factor_run.metrics.coverage)}`;
+    if (stageId === "statistician") return agentResult.statistician.rationale;
+    if (stageId === "local_gates") return Object.entries(agentResult.local_gates).map(([key, passed]) => `${key} ${passed ? "PASS" : "FAIL"}`).join(" · ");
+    if (stageId === "orchestrator") return agentResult.decision.rationale;
+    return agentResult.report_artifact_id;
+  }
 
   async function runAgents(event: FormEvent) {
     event.preventDefault();
@@ -94,6 +171,102 @@ export default function Research() {
       </header>
 
       {(expError || statusError || runError) && <div className="error-box">{expError || statusError || runError}</div>}
+
+      <section className={`workflow-board ${running ? "is-running" : ""}`} aria-label="多智能体研究工作流">
+        <div className="workflow-board-head">
+          <div>
+            <span className="workflow-kicker"><BrainCircuit size={14} /> AGENT WORKFLOW</span>
+            <h2>研究协作拓扑</h2>
+          </div>
+          <div className="workflow-run-summary">
+            <span><i className={agentStatus?.ready ? "online" : ""} />{agentStatus?.ready ? "SYSTEM READY" : "CREDENTIALS MISSING"}</span>
+            <span>{agentResult ? `${agentResult.calls.length} CALLS · ${totalTokens.toLocaleString()} TOKENS` : `BUDGET · ${agentStatus?.budget.max_llm_calls_per_run ?? "-"} CALLS`}</span>
+          </div>
+        </div>
+
+        <div className="workflow-workspace">
+          <div className="workflow-map">
+            <button className="workflow-origin" type="button" onClick={() => setSelectedStageId("researcher")}>
+              <Sparkles size={16} />
+              <span><small>RESEARCH BRIEF</small><strong>{request.topic}</strong></span>
+              <b>{running ? "RUNNING" : agentResult ? agentResult.experiment.state : "READY"}</b>
+            </button>
+
+            <div className="workflow-spine" aria-hidden="true"><span /></div>
+
+            <div className="workflow-agent-row">
+              {WORKFLOW_STAGES.slice(0, 4).map((stage, index) => {
+                const Icon = stage.icon;
+                const route = agentStatus?.roles[stage.id];
+                return (
+                  <div className="workflow-agent-step" key={stage.id}>
+                    <button
+                      className={`workflow-node ${stageStatus(stage.id)} ${selectedStageId === stage.id ? "selected" : ""}`}
+                      type="button"
+                      onClick={() => setSelectedStageId(stage.id)}
+                    >
+                      <span className="workflow-node-top"><small>{stage.eyebrow}</small><i /></span>
+                      <Icon size={18} />
+                      <strong>{stage.label}</strong>
+                      <span>{route ? `${route.provider} · ${route.model}` : stage.id === "factor_lab" ? "deterministic engine" : "route pending"}</span>
+                    </button>
+                    {index < 3 && <span className="workflow-arrow" aria-hidden="true">→</span>}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="workflow-merge" aria-hidden="true"><span /><i /></div>
+
+            <div className="workflow-final-row">
+              {WORKFLOW_STAGES.slice(4).map((stage, index) => {
+                const Icon = stage.icon;
+                const route = agentStatus?.roles[stage.id];
+                return (
+                  <div className="workflow-final-step" key={stage.id}>
+                    <button
+                      className={`workflow-node wide ${stageStatus(stage.id)} ${selectedStageId === stage.id ? "selected" : ""}`}
+                      type="button"
+                      onClick={() => setSelectedStageId(stage.id)}
+                    >
+                      <span className="workflow-node-top"><small>{stage.eyebrow}</small><i /></span>
+                      <Icon size={18} />
+                      <strong>{stage.label}</strong>
+                      <span>{route ? `${route.provider} · ${route.model}` : stage.id === "report" ? "immutable artifact" : "local authority"}</span>
+                    </button>
+                    {index < 2 && <span className="workflow-arrow" aria-hidden="true">→</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <aside className="workflow-inspector">
+            <div className="workflow-inspector-title">
+              <span>{selectedStage.eyebrow}</span>
+              <i className={stageStatus(selectedStage.id)}>{stageStatus(selectedStage.id)}</i>
+            </div>
+            <h3>{selectedStage.label}</h3>
+            <p>{selectedStage.description}</p>
+            <dl>
+              <div><dt>runtime</dt><dd>{selectedRoute ? `${selectedRoute.provider} / ${selectedRoute.model}` : selectedStage.id === "factor_lab" || selectedStage.id === "local_gates" ? "local / deterministic" : "system"}</dd></div>
+              <div><dt>calls</dt><dd>{selectedCalls.length || (agentResult && !selectedRoute ? 1 : 0)}</dd></div>
+              <div><dt>tokens</dt><dd>{selectedRoute ? selectedTokens.toLocaleString() : "N/A"}</dd></div>
+            </dl>
+            <div className="workflow-inspector-output">
+              <small>LATEST OUTPUT</small>
+              <span>{stageOutcome(selectedStage.id)}</span>
+            </div>
+          </aside>
+        </div>
+
+        <div className="workflow-log" aria-label="工作流日志">
+          <div><span>session log</span><i /></div>
+          <p><time>00:00:01</time><b>system</b><span>role routes loaded · local gates locked</span></p>
+          <p><time>00:00:02</time><b>research</b><span>{running ? "workflow in progress · waiting for structured responses" : agentResult ? `${agentResult.trace_id} · ${agentResult.experiment.state}` : "standing by for research brief"}</span></p>
+          <p><time>00:00:03</time><b>artifact</b><span>{agentResult ? `${agentResult.report_artifact_id} · persisted` : "report will be written after quality gates"}</span></p>
+        </div>
+      </section>
 
       <section className="agent-console">
         <form onSubmit={runAgents}>
