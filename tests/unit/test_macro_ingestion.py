@@ -9,7 +9,7 @@ from urllib.error import HTTPError
 import pytest
 from tests.unit.test_macro_parsers import SAFE_TABLE, SAFE_URL
 
-from quant_system.macro import ingestion
+from quant_system.infra import http as infra_http
 from quant_system.macro.ingestion import (
     FRED_OBSERVATIONS_URL,
     MacroSourceConfig,
@@ -151,7 +151,7 @@ def test_macro_urllib_http_errors_never_expose_url_or_key(monkeypatch, error_cod
             assert timeout == 3
             raise HTTPError(request.full_url, error_code, "source echoed " + secret, {}, None)
 
-    monkeypatch.setattr(ingestion.urllib.request, "build_opener", lambda *handlers: Opener())
+    monkeypatch.setattr(infra_http.urllib.request, "build_opener", lambda *handlers: Opener())
     with pytest.raises(SourceUnavailable) as raised:
         UrllibMacroTransport().get(FRED_OBSERVATIONS_URL, params={"api_key": secret}, timeout=3)
     assert str(raised.value) == f"HTTP_{error_code}"
@@ -181,11 +181,11 @@ def test_macro_urllib_tls_response_size_and_host_restrictions(monkeypatch) -> No
         handlers_seen.extend(handlers)
         return Opener()
 
-    monkeypatch.setattr(ingestion.urllib.request, "build_opener", build)
+    monkeypatch.setattr(infra_http.urllib.request, "build_opener", build)
     with pytest.raises(SourceUnavailable, match="RESPONSE_TOO_LARGE"):
         UrllibMacroTransport(max_response_bytes=4).get(FRED_OBSERVATIONS_URL, params={}, timeout=1)
-    assert any(isinstance(handler, ingestion.urllib.request.HTTPSHandler) for handler in handlers_seen)
-    assert any(isinstance(handler, ingestion._NoRedirect) for handler in handlers_seen)
+    assert any(isinstance(handler, infra_http.urllib.request.HTTPSHandler) for handler in handlers_seen)
+    assert any(isinstance(handler, infra_http._NoRedirect) for handler in handlers_seen)
     with pytest.raises(ValueError, match="allowlisted"):
         UrllibMacroTransport().get("https://evil.example/safe/table.html", params={}, timeout=1)
 

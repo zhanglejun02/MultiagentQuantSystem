@@ -1,15 +1,11 @@
 """Public price-index history adapter with explicit provenance."""
 
-import json
-import ssl
 from datetime import date, timedelta
 from typing import Any
 from urllib.parse import urlencode
-from urllib.request import urlopen
-
-import certifi
 
 from quant_system.domain.exceptions import QuantSystemError
+from quant_system.infra.http import request_json
 
 
 def fetch_index_history(symbol: str, start: date, end: date) -> list[dict[str, Any]]:
@@ -20,9 +16,7 @@ def fetch_index_history(symbol: str, start: date, end: date) -> list[dict[str, A
     padded = start - timedelta(days=31)
     parameter = f"sh000300,day,{padded.isoformat()},{end.isoformat()},640,qfq"
     url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?" + urlencode({"param": parameter})
-    context = ssl.create_default_context(cafile=certifi.where())
-    with urlopen(url, timeout=30, context=context) as response:
-        payload = json.load(response)
+    payload = request_json(url, timeout=30)
     if payload.get("code") != 0:
         raise QuantSystemError("Tencent index history request failed")
     rows = payload.get("data", {}).get("sh000300", {}).get("day", [])

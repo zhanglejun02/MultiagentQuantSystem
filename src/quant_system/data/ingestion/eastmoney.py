@@ -1,24 +1,17 @@
 """Public current company reference data, never a historical universe claim."""
 
-import json
-import ssl
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
-
-import certifi
 
 from quant_system.domain.exceptions import QuantSystemError
+from quant_system.infra.http import request_json
 
 
 def _fetch_report(params: dict[str, str], *, error_message: str) -> dict[str, Any]:
     url = "https://datacenter-web.eastmoney.com/api/data/v1/get?" + urlencode(params)
-    context = ssl.create_default_context(cafile=certifi.where())
-    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urlopen(request, timeout=30, context=context) as response:
-        payload = json.load(response)
+    payload = request_json(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
     if not payload.get("success"):
         raise QuantSystemError(error_message)
     return payload.get("result") or {}

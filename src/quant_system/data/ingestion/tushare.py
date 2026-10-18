@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import ssl
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
@@ -13,15 +12,13 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
-import certifi
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from quant_system.domain.exceptions import QuantSystemError
 from quant_system.domain.types import bar_available_at, cn_dt
+from quant_system.infra.http import HttpConnectionError, HttpStatusError, request_json
 
 TUSHARE_ENDPOINT = "https://api.tushare.pro"
 DAILY_FIELDS = "ts_code,trade_date,open,high,low,close,pre_close,vol,amount"
@@ -45,20 +42,17 @@ Transport = Callable[[str, dict[str, Any], float], dict[str, Any]]
 
 
 def _http_transport(url: str, body: dict[str, Any], timeout: float) -> dict[str, Any]:
-    request = Request(
-        url,
-        data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    context = ssl.create_default_context(cafile=certifi.where())
     try:
-        with urlopen(request, timeout=timeout, context=context) as response:  # noqa: S310
-            payload = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:500]
-        raise QuantSystemError(f"Tushare returned HTTP {exc.code}: {detail}") from exc
-    except URLError as exc:
+        payload = request_json(
+            url,
+            method="POST",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            timeout=timeout,
+        )
+    except HttpStatusError as exc:
+        raise QuantSystemError(f"Tushare returned HTTP {exc.status}: {exc.body}") from exc
+    except HttpConnectionError as exc:
         raise QuantSystemError(f"Tushare connection failed: {exc.reason}") from exc
     if not isinstance(payload, dict):
         raise QuantSystemError("Tushare response must be a JSON object")

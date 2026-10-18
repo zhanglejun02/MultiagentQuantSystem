@@ -18,6 +18,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from quant_system.agents import prompts
 from quant_system.agents.config import AgentLLMConfig, AgentRoleName
 from quant_system.agents.llm import CompletionGateway as CompletionGateway
 from quant_system.agents.llm import LLMMessage
@@ -616,19 +617,7 @@ class AgentResearchOrchestrator:
     @staticmethod
     def _researcher_messages(request: AgentResearchRequest) -> list[LLMMessage]:
         return [
-            LLMMessage(
-                role="system",
-                content=(
-                    "You are the researcher. Return JSON only with name, hypothesis, expression, horizon. "
-                    "Expression must use one outer rank(...) and only fields open, high, low, close, "
-                    "volume, amount, return_1d with functions rank, delta, delay, ts_mean, ts_std, abs. "
-                    "Signatures: rank(x), abs(x), delta(x,n), delay(x,n), ts_mean(x,n), ts_std(x,n), "
-                    "where n is a positive integer no greater than 252. Horizon must be an integer from "
-                    '1 to 20, not a target label. Example: {"name":"Momentum","hypothesis":'
-                    '"Trend persistence","expression":"rank(delta(close,20))","horizon":1}. '
-                    "Never use future data or Python code."
-                ),
-            ),
+            LLMMessage(role="system", content=prompts.RESEARCHER_PROMPT),
             LLMMessage(role="user", content=json.dumps(request.model_dump(mode="json"), ensure_ascii=False)),
         ]
 
@@ -644,14 +633,7 @@ class AgentResearchOrchestrator:
             "local_dsl_error": error,
         }
         return [
-            LLMMessage(
-                role="system",
-                content=(
-                    "Repair the factor candidate using the local DSL error. Return JSON only with name, "
-                    "hypothesis, expression, horizon. Use exactly rank(x), abs(x), delta(x,n), delay(x,n), "
-                    "ts_mean(x,n), or ts_std(x,n); n must be a positive integer <= 252."
-                ),
-            ),
+            LLMMessage(role="system", content=prompts.RESEARCHER_REPAIR_PROMPT),
             LLMMessage(role="user", content=json.dumps(payload, ensure_ascii=False)),
         ]
 
@@ -665,16 +647,7 @@ class AgentResearchOrchestrator:
             "metrics": factor_run.metrics,
         }
         return [
-            LLMMessage(
-                role="system",
-                content=(
-                    "You are a strict quant research critic. Check PIT safety, economic rationale, "
-                    "DSL validity risk and overfitting using the supplied candidate and deterministic "
-                    "evidence only. Do not invent data. Return exactly one JSON object shaped like "
-                    '{"approved":false,"issues":["issue"],"rationale":"reason"}. '
-                    "approved must be boolean and issues must be an array of strings."
-                ),
-            ),
+            LLMMessage(role="system", content=prompts.CRITIC_PROMPT),
             LLMMessage(role="user", content=json.dumps(payload, ensure_ascii=False)),
         ]
 
@@ -688,16 +661,7 @@ class AgentResearchOrchestrator:
             "metrics": factor_run.metrics,
         }
         return [
-            LLMMessage(
-                role="system",
-                content=(
-                    "You are the statistician. Interpret supplied deterministic metrics only; do not "
-                    "invent data. Return exactly one JSON object shaped like "
-                    '{"robust":false,"findings":["finding"],"rationale":"reason"}. '
-                    "robust must be boolean and findings must be an array of strings. Do not use "
-                    "alternative keys such as robustness or put metric objects in findings."
-                ),
-            ),
+            LLMMessage(role="system", content=prompts.STATISTICIAN_PROMPT),
             LLMMessage(role="user", content=json.dumps(payload, ensure_ascii=False)),
         ]
 
@@ -715,14 +679,6 @@ class AgentResearchOrchestrator:
             "local_gates": local_gates,
         }
         return [
-            LLMMessage(
-                role="system",
-                content=(
-                    "You coordinate a research-only workflow. Local gates cannot be overridden. Return "
-                    'exactly one JSON object shaped like {"recommend_candidate":false,"rationale":'
-                    '"reason","next_steps":["step"]}. recommend_candidate must be boolean and '
-                    "next_steps must be an array of strings. Never request live trading."
-                ),
-            ),
+            LLMMessage(role="system", content=prompts.ORCHESTRATOR_PROMPT),
             LLMMessage(role="user", content=json.dumps(payload, ensure_ascii=False)),
         ]

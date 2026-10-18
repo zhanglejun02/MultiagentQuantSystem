@@ -1,20 +1,16 @@
 from __future__ import annotations
 
-import json
-import ssl
 from datetime import date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
-
-import certifi
 
 from quant_system.domain.exceptions import QuantSystemError
 from quant_system.gold.models import ETF_NAMES, PricePoint, Quote
+from quant_system.infra.http import request_json
 
 
 def fetch_json(url: str, data: bytes | None = None) -> Any:
-    request = Request(
+    return request_json(
         url,
         data=data,
         headers={
@@ -23,9 +19,8 @@ def fetch_json(url: str, data: bytes | None = None) -> Any:
             "Content-Type": "application/x-www-form-urlencoded",
             "X-Requested-With": "XMLHttpRequest",
         },
+        timeout=30,
     )
-    with urlopen(request, timeout=30, context=ssl.create_default_context(cafile=certifi.where())) as response:
-        return json.load(response)
 
 
 def parse_spot(payload: Any, as_of: date, fetched_at: datetime) -> Quote:

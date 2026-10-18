@@ -1,6 +1,5 @@
 import json
 from datetime import date
-from io import BytesIO
 
 import pytest
 
@@ -22,8 +21,8 @@ def test_tencent_index_uses_previous_session_anchor(monkeypatch):
         },
     }
     monkeypatch.setattr(
-        "quant_system.data.ingestion.tencent.urlopen",
-        lambda *args, **kwargs: BytesIO(json.dumps(payload).encode()),
+        "quant_system.data.ingestion.tencent.request_json",
+        lambda *args, **kwargs: json.loads(json.dumps(payload)),
     )
     rows = fetch_index_history("000300.SH", date(2025, 1, 2), date(2025, 1, 2))
     assert rows == [{"ts_code": "000300.SH", "trade_date": "20250102", "close": 110, "pre_close": 100}]
@@ -46,8 +45,8 @@ def test_eastmoney_master_requires_all_basket_members(monkeypatch):
         },
     }
     monkeypatch.setattr(
-        "quant_system.data.ingestion.eastmoney.urlopen",
-        lambda *args, **kwargs: BytesIO(json.dumps(payload).encode()),
+        "quant_system.data.ingestion.eastmoney.request_json",
+        lambda *args, **kwargs: json.loads(json.dumps(payload)),
     )
     assert fetch_company_master(("600036.SH",))[0]["list_date"] == "20020409"
     with pytest.raises(QuantSystemError, match="missing requested"):
@@ -72,8 +71,8 @@ def test_eastmoney_cash_unit_and_announcement_normalization(monkeypatch):
         },
     }
     monkeypatch.setattr(
-        "quant_system.data.ingestion.eastmoney.urlopen",
-        lambda *args, **kwargs: BytesIO(json.dumps(payload).encode()),
+        "quant_system.data.ingestion.eastmoney.request_json",
+        lambda *args, **kwargs: json.loads(json.dumps(payload)),
     )
     rows = fetch_cash_dividends(("600036.SH",), date(2025, 1, 1), date(2025, 12, 31))
     assert rows[0]["cash_div_tax"] == "2.05"
@@ -83,8 +82,8 @@ def test_eastmoney_cash_unit_and_announcement_normalization(monkeypatch):
 @pytest.mark.parametrize("report", ["company master", "dividend history"])
 def test_eastmoney_failed_response_preserves_request_context(monkeypatch, report):
     monkeypatch.setattr(
-        "quant_system.data.ingestion.eastmoney.urlopen",
-        lambda *args, **kwargs: BytesIO(b'{"success": false}'),
+        "quant_system.data.ingestion.eastmoney.request_json",
+        lambda *args, **kwargs: {"success": False},
     )
     with pytest.raises(QuantSystemError, match=f"Eastmoney {report} request failed"):
         if report == "company master":

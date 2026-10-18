@@ -6,9 +6,6 @@ import base64
 import json
 import os
 import re
-import ssl
-import urllib.error
-import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
@@ -16,12 +13,12 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlencode
 
-import certifi
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from quant_system.artifacts.envelope import hash_bytes
 from quant_system.domain.types import require_aware, utc_now
+from quant_system.infra.http import HttpResponseTooLargeError, HttpStatusError, request_bytes
 from quant_system.macro.fred import FRED_SERIES, parse_fred_observations
 from quant_system.macro.models import MacroCollectRequest, MacroObservation
 from quant_system.macro.safe import (
@@ -57,11 +54,6 @@ def _transport_error_code(error: Exception) -> str:
     return code if code in known or re.fullmatch(r"HTTP_[1-5]\d\d", code) else "TRANSPORT_ERROR"
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
 class UrllibMacroTransport:
     def __init__(self, *, max_response_bytes: int = 2_000_000) -> None:
         self._max_response_bytes = max_response_bytes
@@ -72,24 +64,20 @@ class UrllibMacroTransport:
             if params:
                 raise SourceUnavailable("SAFE_QUERY_NOT_ALLOWED")
         query = urlencode(params)
-        request = urllib.request.Request(
-            url + ("?" + query if query else ""),
-            headers={"User-Agent": "QuantMacroResearch/1.0", "Accept-Encoding": "identity"},
-        )
-        opener = urllib.request.build_opener(
-            _NoRedirect(),
-            urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=certifi.where())),
-        )
         try:
-            with opener.open(request, timeout=timeout) as response:
-                body = response.read(self._max_response_bytes + 1)
-        except urllib.error.HTTPError as error:
-            raise SourceUnavailable(f"HTTP_{int(error.code)}") from None
+            return request_bytes(
+                url + ("?" + query if query else ""),
+                headers={"User-Agent": "QuantMacroResearch/1.0", "Accept-Encoding": "identity"},
+                timeout=timeout,
+                max_bytes=self._max_response_bytes,
+                allow_redirects=False,
+            )
+        except HttpResponseTooLargeError:
+            raise SourceUnavailable("RESPONSE_TOO_LARGE") from None
+        except HttpStatusError as error:
+            raise SourceUnavailable(f"HTTP_{error.status}") from None
         except Exception:
             raise SourceUnavailable("TRANSPORT_ERROR") from None
-        if len(body) > self._max_response_bytes:
-            raise SourceUnavailable("RESPONSE_TOO_LARGE")
-        return body
 
 
 class MacroSourceConfig(BaseModel):
