@@ -12,6 +12,8 @@ from quant_system.artifacts.envelope import ArtifactEnvelope, hash_bytes
 from quant_system.artifacts.registry import ArtifactRegistry
 from quant_system.artifacts.store import LocalArtifactStore
 from quant_system.artifacts.types import data_snapshot_artifact
+from quant_system.domain.enums import ArtifactType
+from quant_system.domain.exceptions import QuantSystemError
 
 
 class DataSnapshotService:
@@ -58,3 +60,16 @@ class DataSnapshotService:
         """True iff the on-disk data still matches the frozen manifest."""
         data_dir = snapshot.uri[len("file://"):]
         return self._manifest(data_dir) == snapshot.metadata.get("files", {})
+
+    def resolve_path(self, snapshot_id: str) -> Path:
+        snapshot = self._registry.get(snapshot_id)
+        if snapshot.artifact_type != ArtifactType.DATA_SNAPSHOT:
+            raise QuantSystemError("backtest input must be a DATA_SNAPSHOT")
+        if not snapshot.uri.startswith("file://"):
+            raise QuantSystemError("only local frozen data snapshots are supported")
+        path = Path(snapshot.uri.removeprefix("file://"))
+        if not path.is_dir() or not snapshot.metadata.get("files"):
+            raise QuantSystemError("data snapshot is missing or empty")
+        if not self.verify_snapshot(snapshot) or self._store.hash_dir(str(path)) != snapshot.content_hash:
+            raise QuantSystemError("data snapshot integrity check failed")
+        return path

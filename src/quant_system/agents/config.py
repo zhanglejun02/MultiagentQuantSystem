@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -12,7 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from quant_system.domain.exceptions import QuantSystemError
 
 ProviderKind = Literal["openai", "anthropic", "gemini", "openai_compatible"]
-AgentRoleName = Literal["researcher", "critic", "statistician", "orchestrator"]
+AnalystRole = Literal["technical_analyst", "macro_analyst", "quant_analyst", "risk_analyst"]
+AgentRoleName = str
 
 
 class LLMProviderConfig(BaseModel):
@@ -26,9 +28,7 @@ class LLMProviderConfig(BaseModel):
     def api_key(self) -> str:
         value = os.environ.get(self.api_key_env, "").strip()
         if not value:
-            raise QuantSystemError(
-                f"missing LLM credential: set environment variable {self.api_key_env}"
-            )
+            raise QuantSystemError(f"missing LLM credential: set environment variable {self.api_key_env}")
         return value
 
 
@@ -63,15 +63,16 @@ class AgentLLMConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     providers: dict[str, LLMProviderConfig]
-    roles: dict[AgentRoleName, AgentRoleConfig]
+    roles: dict[str, AgentRoleConfig]
     research_budget: ResearchBudget = ResearchBudget()
     factor_validation: FactorValidationConfig = FactorValidationConfig()
 
     @model_validator(mode="after")
     def _known_providers(self) -> AgentLLMConfig:
-        unknown = {
-            role.provider for role in self.roles.values() if role.provider not in self.providers
-        }
+        invalid = [name for name in self.roles if re.fullmatch(r"[a-z][a-z0-9_.-]*", name) is None]
+        if invalid:
+            raise ValueError(f"invalid role ID names: {invalid!r}")
+        unknown = {role.provider for role in self.roles.values() if role.provider not in self.providers}
         if unknown:
             raise ValueError(f"roles reference unknown providers: {sorted(unknown)}")
         return self

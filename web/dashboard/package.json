@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test:gold": "node --test tests/goldModel.test.mjs tests/goldResearch.test.mjs",
+    "test:research": "node --test tests/research*.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

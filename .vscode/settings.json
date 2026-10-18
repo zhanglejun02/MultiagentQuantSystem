@@ -1,4 +1,20 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda"
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python.analysis.exclude": [
+        "var/**",
+        "**/node_modules/**",
+        "**/__pycache__/**"
+    ],
+    "search.exclude": {
+        "var/**": true,
+        "**/*.egg-info/**": true
+    },
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.egg-info": true,
+        "**/.pytest_cache": true,
+        "**/.mypy_cache": true,
+        "**/.ruff_cache": true
+    }
 }

@@ -17,7 +17,8 @@ from quant_system.backtest.request import PredictionTarget
 from quant_system.data.providers.local_parquet import LocalParquetProvider
 from quant_system.domain.models import Bar
 from quant_system.domain.types import bar_available_at, new_id, utc_now
-from quant_system.factors.dsl import FactorExpression, FieldData
+from quant_system.factors.dsl import FactorExpression
+from quant_system.factors.fields import bars_to_fields
 from quant_system.infra.db import session_scope
 from quant_system.infra.orm import FactorRunRow
 
@@ -39,25 +40,6 @@ class FactorRun(BaseModel):
     decay: list[dict[str, Any]]
     yearly_ic: dict[str, float]
     created_at: str
-
-
-def _bars_to_fields(bars: list[Bar]) -> FieldData:
-    fields: FieldData = {name: {} for name in (
-        "open", "high", "low", "close", "volume", "amount", "return_1d"
-    )}
-    for bar in bars:
-        values = {
-            "open": float(bar.open),
-            "high": float(bar.high),
-            "low": float(bar.low),
-            "close": float(bar.close),
-            "volume": float(bar.volume),
-            "amount": float(bar.amount),
-            "return_1d": float(bar.close / bar.prev_close - 1) if bar.prev_close else 0.0,
-        }
-        for field, value in values.items():
-            fields[field].setdefault(bar.trade_date, {})[bar.symbol] = value
-    return fields
 
 
 def _forward_returns(
@@ -113,9 +95,20 @@ class FactorLab:
         self,
         session_factory: sessionmaker[Session],
         provider: LocalParquetProvider,
+        *,
+        adjusted_features: bool = False,
     ) -> None:
         self._sf = session_factory
         self._provider = provider
+        self._adjusted_features = adjusted_features
+
+    def _fields(self, bars: list[Bar], as_of: date):
+        adjusted = (
+            self._provider.adjusted_closes(bars, as_of=bar_available_at(as_of))
+            if self._adjusted_features
+            else None
+        )
+        return bars_to_fields(bars, adjusted)
 
     @staticmethod
     def _to_run(row: FactorRunRow) -> FactorRun:
@@ -140,9 +133,9 @@ class FactorLab:
 
     def list_runs(self) -> list[FactorRun]:
         with session_scope(self._sf) as session:
-            rows = session.execute(
-                select(FactorRunRow).order_by(FactorRunRow.created_at.desc())
-            ).scalars().all()
+            rows = (
+                session.execute(select(FactorRunRow).order_by(FactorRunRow.created_at.desc())).scalars().all()
+            )
             return [self._to_run(row) for row in rows]
 
     def evaluate(
@@ -165,19 +158,15 @@ class FactorLab:
         formula = FactorExpression(expression)
         warmup_start = start_date - timedelta(days=400)
         all_days = self._provider.trading_calendar(warmup_start, end_date)
-        outcome_bars = self._provider.get_bars(
-            None, warmup_start, end_date, as_of=bar_available_at(end_date)
-        )
-        outcome_fields = _bars_to_fields(outcome_bars)
+        outcome_bars = self._provider.get_bars(None, warmup_start, end_date, as_of=bar_available_at(end_date))
+        outcome_fields = self._fields(outcome_bars, end_date)
         opens = outcome_fields["open"]
         closes = outcome_fields["close"]
         scores_by_day: dict[date, dict[str, float]] = {}
         eligible_counts: dict[date, int] = {}
 
         for day in (value for value in all_days if start_date <= value <= end_date):
-            visible_bars = self._provider.get_bars(
-                None, warmup_start, day, as_of=bar_available_at(day)
-            )
+            visible_bars = self._provider.get_bars(None, warmup_start, day, as_of=bar_available_at(day))
             visible_days = sorted({bar.trade_date for bar in visible_bars})
             if not visible_days:
                 continue
@@ -187,7 +176,7 @@ class FactorLab:
                 symbols=current_symbols,
                 index=len(visible_days) - 1,
                 days=visible_days,
-                fields=_bars_to_fields(visible_bars),
+                fields=self._fields(visible_bars, day),
             )
             if scores:
                 scores_by_day[day] = scores
@@ -232,8 +221,7 @@ class FactorLab:
             for previous, current in zip(top_sets, top_sets[1:], strict=False)
         ]
         quantile_returns = {
-            f"Q{index + 1}": _mean_present([row[index] for row in quantile_daily])
-            for index in range(5)
+            f"Q{index + 1}": _mean_present([row[index] for row in quantile_daily]) for index in range(5)
         }
         wealth = [1.0]
         for value in long_short_returns:
@@ -250,8 +238,13 @@ class FactorLab:
                 if day not in day_index:
                     continue
                 forward = _forward_returns(
-                    index=day_index[day], horizon=decay_horizon, target=target_value,
-                    days=observation_days, scores=scores, opens=opens, closes=closes,
+                    index=day_index[day],
+                    horizon=decay_horizon,
+                    target=target_value,
+                    days=observation_days,
+                    scores=scores,
+                    opens=opens,
+                    closes=closes,
                 )
                 ic_value = spearman_ic(scores, forward)
                 if ic_value is not None:
@@ -261,15 +254,12 @@ class FactorLab:
         metrics = {
             "rank_ic": ic_stats["ic_mean"],
             "icir": ic_stats["icir"],
-            "ic_win_rate": (
-                sum(value > 0 for value in ic_values) / len(ic_values) if ic_values else None
-            ),
+            "ic_win_rate": (sum(value > 0 for value in ic_values) / len(ic_values) if ic_values else None),
             "n_ic_days": ic_stats["n_ic_days"],
             "coverage": scored_values / eligible_values if eligible_values else None,
             "turnover": statistics.fmean(turnover_values) if turnover_values else None,
             "long_short_sharpe": (
-                statistics.fmean(long_short_returns) / ls_std * math.sqrt(252)
-                if ls_std > 0 else None
+                statistics.fmean(long_short_returns) / ls_std * math.sqrt(252) if ls_std > 0 else None
             ),
             "long_short_annual_return": (
                 statistics.fmean(long_short_returns) * 252 if long_short_returns else None
@@ -278,12 +268,22 @@ class FactorLab:
         }
         now = utc_now()
         row = FactorRunRow(
-            run_id=new_id("frun_"), expression=formula.expression, universe_id=universe_id,
-            start_date=start_date.isoformat(), end_date=end_date.isoformat(),
-            target=target_value.value, horizon=horizon, status="COMPLETED",
-            inputs=formula.inputs, complexity=formula.complexity, metrics=metrics,
-            ic_series=ic_points, quantile_returns=quantile_returns, decay=decay,
-            yearly_ic=yearly_ic, created_at=now,
+            run_id=new_id("frun_"),
+            expression=formula.expression,
+            universe_id=universe_id,
+            start_date=start_date.isoformat(),
+            end_date=end_date.isoformat(),
+            target=target_value.value,
+            horizon=horizon,
+            status="COMPLETED",
+            inputs=formula.inputs,
+            complexity=formula.complexity,
+            metrics=metrics,
+            ic_series=ic_points,
+            quantile_returns=quantile_returns,
+            decay=decay,
+            yearly_ic=yearly_ic,
+            created_at=now,
         )
         with session_scope(self._sf) as session:
             session.add(row)

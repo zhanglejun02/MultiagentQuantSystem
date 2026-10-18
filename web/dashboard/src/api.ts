@@ -1,16 +1,17 @@
 const BASE = "";
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(BASE + path);
+async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(BASE + path, { signal });
   if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text()}`);
   return res.json();
 }
 
-async function post<T>(path: string, body?: unknown): Promise<T> {
+async function post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(BASE + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
   if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text()}`);
   return res.json();
@@ -49,6 +50,249 @@ export interface DominantFuturesContract {
   return: number;
   volume: number;
   open_interest: number;
+}
+
+export interface GoldQuote {
+  symbol: string;
+  name: string;
+  kind: "spot" | "etf" | "futures";
+  unit: "CNY/g" | "CNY/share";
+  source: string;
+  source_url: string;
+  fetched_at: string;
+  points: {
+    date: string;
+    close: string;
+    open: string | null;
+    high: string | null;
+    low: string | null;
+    volume: string | null;
+    amount: string | null;
+  }[];
+  stale: boolean;
+}
+
+export interface GoldAllocation {
+  other_assets: string;
+  target_weight: string;
+  holdings: { symbol: string; quantity: string; average_cost: string }[];
+  watchlist: string[];
+  note: string;
+}
+
+export interface GoldDashboard {
+  snapshot: {
+    artifact_id: string;
+    fetched_at: string;
+    quotes: GoldQuote[];
+    warnings: string[];
+  } | null;
+  allocation: { artifact_id: string | null; updated_at: string | null; record: GoldAllocation };
+  summary: {
+    gold_value: string | null;
+    total_assets: string | null;
+    weight: string | null;
+    target_weight: string;
+    deviation: string | null;
+    unrealized_pnl: string | null;
+    unpriced_symbols: string[];
+    has_holdings: boolean;
+  };
+  sources: { name: string; url: string; description: string }[];
+  futures: { trade_date: string | null; contracts: DominantFuturesContract[] };
+}
+
+export type GoldResearchStage = "queued" | "fetch" | "researcher" | "critic" | "evaluation"
+  | "statistician" | "independent_analysis" | "cross_review" | "analyst_revision"
+  | "orchestrator" | "final_audit" | "advice_revision" | "final_reaudit" | "complete" | "failed";
+
+export interface GoldResearchStatus {
+  ready: boolean;
+  protocol?: string;
+  roles: Record<string, { provider: string; model: string }>;
+  budget: { max_calls: number; max_tokens: number };
+  active_run_id: string | null;
+  active_gold_run_id?: string | null;
+  busy?: boolean;
+}
+
+export interface GoldResearchRequest {
+  symbol: string;
+  max_weight: number;
+  focus: string;
+}
+
+export interface GoldResearchParameters {
+  fast_window: number;
+  slow_window: number;
+  volatility_target: number;
+  trailing_stop: number;
+}
+
+export interface GoldResearchDiagnostic {
+  status: string;
+  total_return?: number;
+  max_drawdown?: number;
+  trade_count?: number;
+  cost_fraction_of_initial?: number;
+  buy_hold_same_cap_return?: number;
+  start_date?: string;
+  end_date?: string;
+  curve?: { date: string; nav: number }[];
+  trades: { signal_date: string; execution_date: string; side: string }[];
+}
+
+export interface GoldInvestmentAdvicePayload {
+  horizon: "3至12个月";
+  stance: "WAIT" | "GRADUAL_ALLOCATION" | "DEFENSIVE";
+  summary: string;
+  reasons: {
+    evidence_key: "gold_return_126" | "gold_return_252" | "gold_ma120_gap" | "gold_ma250_gap"
+      | "gold_drawdown_252" | "diagnostic_excess_return" | "double_cost_return" | "independent_oos";
+    implication: string;
+    value: number | boolean;
+  }[];
+  reassess_when: string;
+  confidence: "LOW";
+  limitations: string;
+}
+
+export interface GoldAdviceAudit {
+  status: "PASS" | "REJECT" | "UNAVAILABLE";
+  reason: string;
+  published_draft_hash: string | null;
+  rounds: {
+    round: number;
+    draft: GoldInvestmentAdvicePayload;
+    draft_hash: string;
+    review: {
+      decision: "PASS" | "REVISE" | "REJECT";
+      unsupported_claims: string[];
+      missing_risks: string[];
+      confidence_adjustment: number;
+      rationale: string;
+    };
+  }[];
+}
+
+export type GoldAnalystRole = "technical_analyst" | "macro_analyst" | "quant_analyst" | "risk_analyst";
+
+export interface GoldEvidencePackage {
+  snapshot_id: string;
+  as_of: string;
+  items: Record<string, {
+    category: "price" | "diagnostic" | "macro" | "constraint";
+    value: number | string | boolean | null;
+    definition: string;
+    source: string;
+  }>;
+  limitations: string[];
+}
+
+export interface GoldResearchState {
+  analyst: GoldAnalystRole;
+  view: "BULLISH" | "NEUTRAL" | "BEARISH" | "INSUFFICIENT_EVIDENCE";
+  confidence: number;
+  summary: string;
+  claims: { claim: string; evidence_ids: string[]; counterevidence_ids?: string[]; confidence: number }[];
+  risks: string[];
+  open_questions: string[];
+  invalidating_conditions: string[];
+  missing_evidence: string[];
+}
+
+export interface GoldDeliberation {
+  protocol: "evidence-deliberation-v1";
+  evidence_hash: string;
+  initial_states: GoldResearchState[];
+  states: GoldResearchState[];
+  disagreements: {
+    disagreement_id: string;
+    kind: "DIRECTION" | "EVIDENCE_GAP" | "CONFIDENCE";
+    analysts: [GoldAnalystRole, GoldAnalystRole];
+    question: string;
+    evidence_ids: string[];
+  }[];
+  revisions: {
+    action: "MAINTAIN" | "LOWER_CONFIDENCE" | "RETRACT";
+    state: GoldResearchState;
+    addressed_disagreement_ids: string[];
+    evidence_requests: string[];
+    rationale: string;
+  }[];
+  skipped_analysts: Record<string, string>;
+  review_status: "NOT_NEEDED" | "REVISED" | "UNRESOLVED" | "BUDGET_SKIPPED";
+  conclusion: "EVIDENCE_BOUNDED" | "INSUFFICIENT_EVIDENCE";
+}
+
+export interface GoldResearchResult {
+  proposal: {
+    name: string;
+    hypothesis: string;
+    market_view: string;
+    risks: string[];
+    parameters: GoldResearchParameters;
+  };
+  evaluation: {
+    symbol: string;
+    unit?: "CNY/g" | "CNY/share";
+    instrument_kind?: "spot" | "etf";
+    signal: "ENTER" | "EXIT_OR_WAIT" | "INSUFFICIENT_DATA";
+    target_weight: number;
+    as_of?: string;
+    close?: number;
+    fast_average?: number;
+    slow_average?: number;
+    trailing_reference?: number;
+    annualized_volatility?: number;
+    max_weight: number;
+    parameters: GoldResearchParameters;
+    rules: { entry: string; exit: string; sizing: string; execution: string; invalidation: string };
+    diagnostic: GoldResearchDiagnostic;
+    double_cost: GoldResearchDiagnostic;
+    limitations: string[];
+    deployment_eligible: false;
+    research_only: true;
+  };
+  critic: { approved: boolean; issues: string[]; rationale: string };
+  statistician: { robust: boolean; findings: string[]; rationale: string };
+  decision: { recommend_candidate: boolean; rationale: string; next_steps: string[] };
+  investment_advice?: GoldInvestmentAdvicePayload | null;
+  advice_audit?: GoldAdviceAudit;
+  evidence_package?: GoldEvidencePackage | null;
+  deliberation?: GoldDeliberation | null;
+  local_gates: Record<string, boolean>;
+  outcome: "OBSERVE" | "PAPER_CANDIDATE";
+  deployment_eligible: false;
+  analysis_context: {
+    as_of: string;
+    latest_fetch: string;
+    snapshot_id: string;
+    facts: Record<string, unknown>;
+    warnings: string[];
+  };
+  calls: {
+    role: string;
+    provider: string;
+    model: string;
+    input_tokens: number | null;
+    output_tokens: number | null;
+    raw_request_id: string | null;
+  }[];
+}
+
+export interface GoldResearchRun {
+  run_id: string;
+  protocol?: string;
+  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
+  stage: GoldResearchStage;
+  created_at: string;
+  updated_at: string;
+  request: GoldResearchRequest;
+  snapshot_id: string | null;
+  report_artifact_id?: string | null;
+  error: string | null;
+  result: GoldResearchResult | null;
 }
 
 export interface MarketSnapshotPayload {
@@ -412,8 +656,224 @@ export interface FactorEvaluateRequest {
   horizon: number;
 }
 
+export interface ResearchBudget {
+  max_calls: number;
+  max_tokens: number;
+  timeout_seconds: number;
+  max_parallel_calls: number;
+}
+
+export interface ResearchRequestSchema {
+  type?: string | string[];
+  title?: string;
+  description?: string;
+  format?: string;
+  default?: unknown;
+  enum?: unknown[];
+  const?: unknown;
+  required?: string[];
+  properties?: Record<string, ResearchRequestSchema>;
+  items?: ResearchRequestSchema;
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  minItems?: number;
+  maxItems?: number;
+  pattern?: string;
+  additionalProperties?: boolean | ResearchRequestSchema;
+  $ref?: string;
+  $defs?: Record<string, ResearchRequestSchema>;
+  anyOf?: ResearchRequestSchema[];
+  oneOf?: ResearchRequestSchema[];
+}
+
+export interface TaskDescriptor {
+  task_type: string;
+  module_id: string;
+  title: string;
+  version: string;
+  result_schema_version: string;
+  roles: string[] | Record<string, unknown>;
+  capabilities: string[];
+  default_budget: ResearchBudget;
+  acquisition: boolean | string | Record<string, unknown>;
+  ready: boolean;
+  unavailable_reason: string | null;
+  missing_roles: string[];
+  request_schema: ResearchRequestSchema;
+}
+
+export interface ResearchModules {
+  ready: boolean;
+  active_run_id: string | null;
+  busy: boolean;
+  max_parallel_tasks: number;
+  max_parallel_calls: number;
+  modules: TaskDescriptor[];
+}
+
+export interface ResearchPlanTask {
+  task_id: string;
+  task_type: string;
+  payload: Record<string, unknown>;
+  inputs: Record<string, { task_id: string; output_key: string }>;
+  depends_on: string[];
+  required: boolean;
+  budget: ResearchBudget;
+}
+
+export interface ResearchPlan {
+  schema_version: "research-plan-v1";
+  plan_id: string;
+  question: string;
+  tasks: ResearchPlanTask[];
+  mode: "LATEST" | "HISTORICAL";
+  knowledge_cutoff: string | null;
+  budget: ResearchBudget;
+  source: "EXPLICIT" | "RULE" | "MODEL";
+}
+
+export interface ResearchPlanRequest {
+  question: string;
+  payload?: Record<string, unknown>;
+  use_model: boolean;
+  budget?: ResearchBudget;
+}
+
+export interface EvidenceRef {
+  artifact_id: string;
+  content_hash?: string | null;
+  namespace?: string;
+  schema_version?: string;
+  record_key?: string | null;
+  [key: string]: unknown;
+}
+
+export interface TaskResult {
+  outcome: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  evidence: EvidenceRef[];
+  publication: {
+    decision: "PASS" | "WITHHELD" | "NOT_APPLICABLE";
+    content_hash: string | null;
+    reason: string | null;
+  };
+  limitations: string[];
+  report_artifact_id: string | null;
+}
+
+export type ResearchRunStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED"
+  | "INTERRUPTED" | "CANCELLED";
+
+export interface ResearchUsage {
+  calls_used: number;
+  tokens_used: number;
+  tokens_reserved: number;
+  max_calls: number;
+  max_tokens: number;
+  [key: string]: unknown;
+}
+
+export interface ResearchRun {
+  run_id: string;
+  root_run_id: string;
+  parent_run_id: string | null;
+  task_id: string | null;
+  task_type: string;
+  module_id: string;
+  task_version: string;
+  result_schema_version: string;
+  status: ResearchRunStatus;
+  stage: string;
+  created_at: string;
+  updated_at: string;
+  request: Record<string, unknown>;
+  knowledge_cutoff: string | null;
+  result: TaskResult | null;
+  error: string | null;
+  children: string[];
+  usage: ResearchUsage;
+  cancel_requested: boolean;
+  revision: number;
+}
+
+export interface ResearchRunRequest {
+  task_type?: string;
+  payload?: Record<string, unknown>;
+  plan?: ResearchPlan;
+  budget?: ResearchBudget;
+  idempotency_key: string;
+  mode?: "LATEST" | "HISTORICAL";
+  knowledge_cutoff?: string | null;
+}
+
+export interface ResearchEvent {
+  run_id: string;
+  sequence: number;
+  event_type: string;
+  stage: string;
+  at: string;
+  data: Record<string, unknown>;
+}
+
+export interface ResearchCallReceipt {
+  call_id: string;
+  sequence: number;
+  role: string;
+  provider: string;
+  model: string;
+  purpose: string;
+  status: string;
+  messages: { role: string; content: unknown }[];
+  response: {
+    content: string;
+    provider: string;
+    model: string;
+    input_tokens: number | null;
+    output_tokens: number | null;
+    raw_request_id: string | null;
+  } | null;
+  error: string | null;
+  parse_error: string | null;
+  reservation_tokens: number;
+  used_tokens: number;
+  repair_of: string | null;
+  created_at: string;
+}
+
+export interface ResearchPlanResponse {
+  plan: ResearchPlan;
+  artifact_id: string;
+  receipts?: ResearchCallReceipt[];
+}
+
 export const api = {
+  researchModules: (signal?: AbortSignal) => get<ResearchModules>("/api/research/modules", signal),
+  researchPlan: (body: ResearchPlanRequest, signal?: AbortSignal) =>
+    post<ResearchPlanResponse>("/api/research/plans", body, signal),
+  researchRuns: (offset = 0, limit = 20, signal?: AbortSignal) =>
+    get<ResearchRun[]>(`/api/research/runs?offset=${offset}&limit=${limit}`, signal),
+  startResearchRun: (body: ResearchRunRequest, signal?: AbortSignal) =>
+    post<ResearchRun>("/api/research/runs", body, signal),
+  researchRun: (id: string, signal?: AbortSignal) =>
+    get<ResearchRun>(`/api/research/runs/${encodeURIComponent(id)}`, signal),
+  researchEvents: (id: string, offset = 0, limit = 100, signal?: AbortSignal) =>
+    get<ResearchEvent[]>(`/api/research/runs/${encodeURIComponent(id)}/events?offset=${offset}&limit=${limit}`, signal),
+  researchCalls: (id: string, offset = 0, limit = 100, signal?: AbortSignal) =>
+    get<ResearchCallReceipt[]>(`/api/research/runs/${encodeURIComponent(id)}/calls?offset=${offset}&limit=${limit}`, signal),
+  cancelResearchRun: (id: string, signal?: AbortSignal) =>
+    post<ResearchRun>(`/api/research/runs/${encodeURIComponent(id)}/cancel`, undefined, signal),
   health: () => get<{ status: string; db: string; time: string }>("/api/health"),
+  goldDashboard: () => get<GoldDashboard>("/api/gold/dashboard"),
+  saveGoldAllocation: (body: GoldAllocation) => post<GoldDashboard>("/api/gold/allocation", body),
+  goldResearchStatus: (signal?: AbortSignal) => get<GoldResearchStatus>("/api/gold/research/status", signal),
+  goldResearchRuns: (signal?: AbortSignal) => get<GoldResearchRun[]>("/api/gold/research/runs", signal),
+  startGoldResearch: (body: GoldResearchRequest, signal?: AbortSignal) =>
+    post<GoldResearchRun>("/api/gold/research/runs", body, signal),
+  goldResearchRun: (id: string, signal?: AbortSignal) =>
+    get<GoldResearchRun>(`/api/gold/research/runs/${encodeURIComponent(id)}`, signal),
   marketDataStatus: () => get<MarketDataStatus>("/api/market-data/status"),
   marketSnapshots: () => get<Artifact[]>("/api/market-snapshots"),
   latestMarketSnapshot: () => get<MarketSnapshotResponse>("/api/market-snapshots/latest"),

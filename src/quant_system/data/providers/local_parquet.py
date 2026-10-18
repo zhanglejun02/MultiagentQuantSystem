@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pyarrow.parquet as pq
 
-from quant_system.domain.exceptions import PITViolationError
+from quant_system.domain.exceptions import PITViolationError, QuantSystemError
 from quant_system.domain.models import Bar, CorporateActionRecord, SecurityMaster, StatusInterval
-from quant_system.domain.types import require_aware, to_decimal
+from quant_system.domain.types import bar_available_at, require_aware, to_decimal
 
 
 class LocalParquetProvider:
@@ -28,6 +29,7 @@ class LocalParquetProvider:
         self._securities: list[SecurityMaster] | None = None
         self._statuses: list[StatusInterval] | None = None
         self._corporate_actions: list[CorporateActionRecord] | None = None
+        self._adjustments: list[dict] | None = None
 
     # -- loading -----------------------------------------------------------
     def _load_bars(self) -> list[Bar]:
@@ -118,6 +120,49 @@ class LocalParquetProvider:
         )
 
     # -- helpers -----------------------------------------------------------
+    def adjusted_closes(self, bars: list[Bar], *, as_of: datetime) -> dict[tuple[str, date], Decimal]:
+        require_aware(as_of, "as_of")
+        if self._adjustments is None:
+            path = self.data_dir / "adjustments.parquet"
+            if not path.exists():
+                raise QuantSystemError("adjusted features require adjustments.parquet")
+            self._adjustments = pq.read_table(path).to_pylist()
+        factors = {
+            (row["symbol"], row["trade_date"]): to_decimal(row["factor"])
+            for row in self._adjustments if row["available_at"] <= as_of
+        }
+        result = {}
+        for bar in bars:
+            key = (bar.symbol, bar.trade_date)
+            if key not in factors or factors[key] <= 0:
+                raise QuantSystemError(f"missing PIT adjustment factor: {key}")
+            result[key] = bar.close * factors[key]
+        return result
+
+    def benchmark_series(self, symbol: str, days: list[date]) -> list[tuple[date, Decimal]]:
+        path = self.data_dir / "benchmarks.parquet"
+        if not path.exists():
+            raise QuantSystemError("benchmark requested but benchmarks.parquet is missing")
+        rows = [row for row in pq.read_table(path).to_pylist() if row["symbol"] == symbol]
+        by_day = {row["trade_date"]: row for row in rows}
+        if len(by_day) != len(rows) or any(day not in by_day for day in days):
+            raise QuantSystemError(f"benchmark dates missing or duplicated: {symbol}")
+        if not days:
+            return []
+        first = by_day[days[0]]
+        values = [(days[0], to_decimal(first["prev_close"]))]
+        for day in days:
+            row = by_day[day]
+            if row["available_at"] > bar_available_at(day):
+                raise QuantSystemError(f"benchmark observation not available at close: {day}")
+            value = to_decimal(row["close"])
+            if value <= 0:
+                raise QuantSystemError("benchmark prices must be positive")
+            values.append((day, value))
+        if values[0][1] <= 0:
+            raise QuantSystemError("benchmark anchor must be positive")
+        return values
+
     def assert_pit(self, bars: list[Bar], as_of: datetime) -> None:
         for b in bars:
             if b.available_at > as_of:

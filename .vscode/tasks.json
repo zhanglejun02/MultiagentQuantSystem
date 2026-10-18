@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "API (local SQLite)",
+			"type": "shell",
+			"command": "if [[ -f .env ]]; then set -a; source .env; set +a; fi; QUANT_DB_URL=\"sqlite:///$PWD/var/quant.db\" .venv/bin/python -m uvicorn quant_system.api.app:factory --factory --host 127.0.0.1 --port 8000 --workers 1",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Dashboard",
+			"type": "shell",
+			"command": "npm --prefix web/dashboard run dev -- --host 127.0.0.1 --port 5173 --strictPort",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

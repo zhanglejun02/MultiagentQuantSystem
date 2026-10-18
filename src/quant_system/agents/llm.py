@@ -8,14 +8,15 @@ from __future__ import annotations
 
 import io
 import json
+import math
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 import certifi
 import pycurl
 from pydantic import BaseModel, ConfigDict
 
-from quant_system.agents.config import AgentLLMConfig, AgentRoleName, LLMProviderConfig
+from quant_system.agents.config import AgentLLMConfig, AgentRoleConfig, LLMProviderConfig
 from quant_system.domain.exceptions import QuantSystemError
 
 
@@ -37,7 +38,65 @@ class LLMResponse(BaseModel):
     raw_request_id: str | None = None
 
 
+class CompletionGateway(Protocol):
+    def complete(self, role: str, messages: list[LLMMessage]) -> LLMResponse: ...
+
+
 Transport = Callable[[str, dict[str, str], dict[str, Any], float], dict[str, Any]]
+
+
+def _send_http_request(
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise QuantSystemError("LLM request timeout must be finite and positive")
+    output = io.BytesIO()
+    request = pycurl.Curl()
+    try:
+        request.setopt(pycurl.URL, url.encode("utf-8"))
+        request.setopt(pycurl.POST, 1)
+        request.setopt(pycurl.POSTFIELDS, json.dumps(body).encode("utf-8"))
+        request.setopt(
+            pycurl.HTTPHEADER,
+            [
+                f"{name}: {value}".encode()
+                for name, value in {
+                    "Content-Type": "application/json",
+                    **headers,
+                }.items()
+            ],
+        )
+        request.setopt(pycurl.CAINFO, certifi.where().encode("utf-8"))
+        request.setopt(pycurl.TIMEOUT_MS, max(1, int(timeout_seconds * 1000)))
+        request.setopt(pycurl.WRITEDATA, output)
+        request.perform()
+        status_code = int(request.getinfo(pycurl.RESPONSE_CODE))
+        if status_code >= 400:
+            raise QuantSystemError(f"LLM provider returned HTTP {status_code}")
+        try:
+            payload = json.loads(output.getvalue().decode("utf-8"))
+        except (ValueError, UnicodeError) as exc:
+            raise QuantSystemError("LLM provider response is not valid JSON") from exc
+    finally:
+        request.close()
+    if not isinstance(payload, dict):
+        raise QuantSystemError("LLM provider response must be a JSON object")
+    return payload
+
+
+def _http_transport_once(
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    try:
+        return _send_http_request(url, headers, body, timeout_seconds)
+    except pycurl.error as exc:
+        raise QuantSystemError("LLM provider connection failed (single attempt)") from exc
 
 
 def _http_transport(
@@ -46,45 +105,13 @@ def _http_transport(
     body: dict[str, Any],
     timeout_seconds: float,
 ) -> dict[str, Any]:
-    last_error: pycurl.error | None = None
+    """Legacy retry helper; gateway completions use the single-attempt transport."""
     for _ in range(3):
-        output = io.BytesIO()
-        request = pycurl.Curl()
         try:
-            request.setopt(pycurl.URL, url.encode("utf-8"))
-            request.setopt(pycurl.POST, 1)
-            request.setopt(pycurl.POSTFIELDS, json.dumps(body).encode("utf-8"))
-            request.setopt(
-                pycurl.HTTPHEADER,
-                [f"{name}: {value}".encode() for name, value in {
-                    "Content-Type": "application/json",
-                    **headers,
-                }.items()],
-            )
-            request.setopt(pycurl.CAINFO, certifi.where().encode("utf-8"))
-            request.setopt(pycurl.TIMEOUT_MS, int(timeout_seconds * 1000))
-            request.setopt(pycurl.WRITEDATA, output)
-            request.perform()
-            status_code = int(request.getinfo(pycurl.RESPONSE_CODE))
-            raw = output.getvalue()
-            if status_code >= 400:
-                detail = raw.decode("utf-8", errors="replace")[:1000]
-                raise QuantSystemError(
-                    f"LLM provider returned HTTP {status_code}: {detail}"
-                )
-            payload = json.loads(raw.decode("utf-8"))
-            break
-        except pycurl.error as exc:
-            last_error = exc
-        finally:
-            request.close()
-    else:
-        raise QuantSystemError(
-            f"LLM provider connection failed after 3 attempts: {last_error}"
-        )
-    if not isinstance(payload, dict):
-        raise QuantSystemError("LLM provider response must be a JSON object")
-    return payload
+            return _send_http_request(url, headers, body, timeout_seconds)
+        except pycurl.error:
+            continue
+    raise QuantSystemError("LLM provider connection failed after 3 attempts")
 
 
 def _join_url(base_url: str, path: str) -> str:
@@ -94,12 +121,36 @@ def _join_url(base_url: str, path: str) -> str:
 class LLMGateway:
     def __init__(self, config: AgentLLMConfig, transport: Transport | None = None) -> None:
         self._config = config
-        self._transport = transport or _http_transport
+        self._transport = (
+            _http_transport_once if transport is None or transport is _http_transport else transport
+        )
 
-    def complete(self, role: AgentRoleName, messages: list[LLMMessage]) -> LLMResponse:
+    def complete(self, role: str, messages: list[LLMMessage]) -> LLMResponse:
+        """Complete a configured role without implicit provider retries."""
+        _, binding = self._config.route(role)
+        return self.complete_bound(binding, messages)
+
+    def complete_bound(
+        self,
+        binding: AgentRoleConfig,
+        messages: list[LLMMessage],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> LLMResponse:
+        """Use an explicit immutable binding and at most one transport invocation."""
         if not messages:
             raise QuantSystemError("LLM request requires at least one message")
-        provider, role_config = self._config.route(role)
+        try:
+            provider = self._config.providers[binding.provider]
+        except KeyError as exc:
+            raise QuantSystemError(f"LLM provider is not configured: {binding.provider}") from exc
+        if timeout_seconds is not None:
+            if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+                raise QuantSystemError("LLM request timeout must be finite and positive")
+            provider = provider.model_copy(
+                update={"timeout_seconds": min(provider.timeout_seconds, timeout_seconds)}
+            )
+        role_config = binding
         api_key = provider.api_key()
         if provider.kind in {"openai", "openai_compatible"}:
             return self._openai_compatible(
@@ -164,8 +215,11 @@ class LLMGateway:
             raise QuantSystemError("invalid OpenAI-compatible response") from exc
         usage = payload.get("usage", {})
         return LLMResponse(
-            content=str(content), provider=provider_name, model=model,
-            input_tokens=usage.get("prompt_tokens"), output_tokens=usage.get("completion_tokens"),
+            content=str(content),
+            provider=provider_name,
+            model=model,
+            input_tokens=usage.get("prompt_tokens"),
+            output_tokens=usage.get("completion_tokens"),
             raw_request_id=payload.get("id"),
         )
 
@@ -181,9 +235,7 @@ class LLMGateway:
         messages: list[LLMMessage],
     ) -> LLMResponse:
         system = "\n\n".join(message.content for message in messages if message.role == "system")
-        conversation = [
-            message.model_dump() for message in messages if message.role != "system"
-        ]
+        conversation = [message.model_dump() for message in messages if message.role != "system"]
         body: dict[str, Any] = {
             "model": model,
             "messages": conversation,
@@ -199,15 +251,16 @@ class LLMGateway:
             provider.timeout_seconds,
         )
         try:
-            content = "".join(
-                block["text"] for block in payload["content"] if block.get("type") == "text"
-            )
+            content = "".join(block["text"] for block in payload["content"] if block.get("type") == "text")
         except (KeyError, TypeError) as exc:
             raise QuantSystemError("invalid Anthropic response") from exc
         usage = payload.get("usage", {})
         return LLMResponse(
-            content=content, provider=provider_name, model=model,
-            input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
+            content=content,
+            provider=provider_name,
+            model=model,
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
             raw_request_id=payload.get("id"),
         )
 
@@ -229,7 +282,8 @@ class LLMGateway:
                     "role": "model" if message.role == "assistant" else "user",
                     "parts": [{"text": message.content}],
                 }
-                for message in messages if message.role != "system"
+                for message in messages
+                if message.role != "system"
             ],
             "generationConfig": {
                 "temperature": temperature,
@@ -249,14 +303,15 @@ class LLMGateway:
         )
         try:
             content = "".join(
-                part["text"] for part in payload["candidates"][0]["content"]["parts"]
-                if "text" in part
+                part["text"] for part in payload["candidates"][0]["content"]["parts"] if "text" in part
             )
         except (KeyError, IndexError, TypeError) as exc:
             raise QuantSystemError("invalid Gemini response") from exc
         usage = payload.get("usageMetadata", {})
         return LLMResponse(
-            content=content, provider=provider_name, model=model,
+            content=content,
+            provider=provider_name,
+            model=model,
             input_tokens=usage.get("promptTokenCount"),
             output_tokens=usage.get("candidatesTokenCount"),
         )

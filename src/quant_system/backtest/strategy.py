@@ -26,6 +26,7 @@ class StrategyContext:
 class StrategyDecision:
     scores: dict[str, Decimal]
     weights: dict[str, Decimal]  # target weights; sum <= 1, remainder is cash
+    rebalance: bool = True
 
 
 class Strategy(Protocol):

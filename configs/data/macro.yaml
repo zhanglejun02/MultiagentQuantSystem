@@ -1,0 +1,7 @@
+timeout_seconds: 15
+fred_page_size: 1000
+fred_max_pages: 12
+safe_max_years: 8
+max_requests: 64
+max_response_bytes: 2000000
+safe_published_pages: {}

@@ -14,6 +14,34 @@ providers:
 
 # Each role may use a different provider and model.
 roles:
+  technical_analyst:
+    provider: kimi
+    model: kimi-k3
+    temperature: 0.6
+    max_output_tokens: 1024
+    thinking: disabled
+
+  macro_analyst:
+    provider: deepseek
+    model: deepseek-v4-pro
+    temperature: 0.0
+    max_output_tokens: 1024
+    thinking: disabled
+
+  quant_analyst:
+    provider: deepseek
+    model: deepseek-v4-pro
+    temperature: 0.0
+    max_output_tokens: 1024
+    thinking: disabled
+
+  risk_analyst:
+    provider: deepseek
+    model: deepseek-v4-pro
+    temperature: 0.1
+    max_output_tokens: 1024
+    thinking: disabled
+
   researcher:
     provider: kimi
     model: kimi-k3
@@ -39,6 +67,13 @@ roles:
     provider: kimi
     model: kimi-k3
     temperature: 0.6
+    max_output_tokens: 1024
+    thinking: disabled
+
+  final_auditor:
+    provider: deepseek
+    model: deepseek-v4-pro
+    temperature: 0.0
     max_output_tokens: 1024
     thinking: disabled
 

@@ -7,8 +7,10 @@ Replaceable later by S3/MinIO without touching domain code.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any, Protocol
 
 from quant_system.artifacts.envelope import hash_bytes
@@ -42,16 +44,38 @@ class LocalArtifactStore:
 
     def _path(self, key: str) -> Path:
         p = (self.root / key).resolve()
-        if not str(p).startswith(str(self.root.resolve())):
+        if not p.is_relative_to(self.root.resolve()):
             raise ValueError(f"key escapes store root: {key}")
         return p
 
+    @staticmethod
+    def _write_atomic(path: Path, data: bytes) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = None
+        try:
+            with NamedTemporaryFile(
+                dir=path.parent, prefix=".artifact-", suffix=".tmp", delete=False
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                temporary.write(data)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.link(temporary_path, path)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
     def put_bytes(self, key: str, data: bytes) -> tuple[str, str]:
         path = self._path(key)
-        if path.exists():
-            raise ImmutabilityError(f"artifact content already exists at {path}")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
+        try:
+            self._write_atomic(path, data)
+        except FileExistsError as exc:
+            raise ImmutabilityError(f"artifact content already exists at {path}") from exc
         return f"file://{path}", hash_bytes(data)
 
     def put_json(self, key: str, obj: Any) -> tuple[str, str]:
@@ -64,12 +88,11 @@ class LocalArtifactStore:
         ).encode()
         digest = hash_bytes(data)
         path = self._path(f"{namespace}/{digest}.json")
-        if path.exists():
+        try:
+            self._write_atomic(path, data)
+        except FileExistsError as exc:
             if hash_bytes(path.read_bytes()) != digest:
-                raise ImmutabilityError(f"content-addressed file drifted at {path}")
-            return f"file://{path}", digest
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
+                raise ImmutabilityError(f"content-addressed file drifted at {path}") from exc
         return f"file://{path}", digest
 
     def put_dir(self, key: str, src_dir: str) -> tuple[str, str]:
@@ -105,7 +128,7 @@ class LocalArtifactStore:
     def _uri_to_path(uri: str) -> Path:
         if not uri.startswith("file://"):
             raise ArtifactNotFoundError(f"unsupported uri scheme: {uri}")
-        return Path(uri[len("file://"):])
+        return Path(uri[len("file://") :])
 
     def get_bytes(self, uri: str) -> bytes:
         path = self._uri_to_path(uri)

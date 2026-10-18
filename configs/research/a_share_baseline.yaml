@@ -1,0 +1,44 @@
+name: a_share_weekly_momentum_2025_v1
+data_start: 2024-11-01
+data_end: 2025-12-31
+symbols:
+  - 600036.SH
+  - 600519.SH
+  - 601318.SH
+  - 600900.SH
+  - 600030.SH
+  - 601166.SH
+  - 600887.SH
+  - 601088.SH
+benchmark: 000300.SH
+benchmark_source: tencent
+reference_source: eastmoney
+adjustment_source: cash_actions
+dividend_source: eastmoney
+lookback_days: 20
+top_k: 3
+initial_cash: '1000000'
+segments:
+  - name: development
+    start: 2025-01-02
+    end: 2025-03-31
+  - name: validation
+    start: 2025-04-01
+    end: 2025-06-30
+  - name: holdout
+    start: 2025-07-01
+    end: 2025-12-31
+limitations:
+  - Fixed basket selected today; selection/survivorship bias, not a historical index universe.
+  - Historical vendor downloads are not archived original releases; availability timestamps are modeled.
+  - Cash dividends credited on ex-date before tax, not actual pay-date; cash timing and tax are simplified.
+  - CSI 300 is a price index; strategy NAV includes gross cash dividends, so excess is not total-return alpha.
+  - Suspensions inferred from missing daily bars; intraday suspension details are not modeled.
+  - Main-board fixture-grade rulebook, no regulatory completeness certification.
+  - Chronological historical holdout is not prospective unseen live data; no parameter search performed.
+  - No formal multiple-testing correction or deployment approval; research-only report.
+  - Equity history from Tushare Pro, CSI 300 price-index history from Tencent public daily feed.
+  - Company names and listing dates from Eastmoney current public company reference, not archived PIT master.
+  - Adjustment factors reconstructed forward from announced cash distributions; no vendor future-normalized adjusted price is used.
+  - Historical ST intervals are not certified for this fixed basket; results are not an investable full-market backtest.
+  - Small dividend implementation variations bounded by CNY 0.10 and 1 percent are reconciled to daily ex-reference; original/applied cash are audited.

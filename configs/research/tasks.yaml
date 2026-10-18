@@ -1,0 +1,59 @@
+tasks:
+  gold.collect:
+    roles: {}
+    budget:
+      max_calls: 0
+      max_tokens: 0
+
+  gold.research:
+    roles:
+      technical_analyst: technical_analyst
+      macro_analyst: macro_analyst
+      quant_analyst: quant_analyst
+      risk_analyst: risk_analyst
+      orchestrator: orchestrator
+      final_auditor: final_auditor
+    independent_roles:
+      - [final_auditor, orchestrator]
+    budget:
+      max_calls: 12
+      max_tokens: 64000
+
+  factor.research:
+    roles:
+      researcher: researcher
+      critic: critic
+      statistician: statistician
+      orchestrator: orchestrator
+    budget:
+      max_calls: 30
+      max_tokens: 200000
+
+  macro.collect:
+    roles: {}
+    tools:
+      system: [macro.sources.collect]
+    capabilities: [macro.network.read]
+    budget:
+      max_calls: 0
+      max_tokens: 0
+
+  macro.analyze:
+    roles: {}
+    tools:
+      system: [macro.snapshot.read]
+    capabilities: [macro.snapshot.read]
+    budget:
+      max_calls: 0
+      max_tokens: 0
+
+  macro.research:
+    roles:
+      macro.rates: statistician
+      macro.risks: critic
+    tools:
+      system: [macro.snapshot.read]
+    capabilities: [macro.snapshot.read]
+    budget:
+      max_calls: 4
+      max_tokens: 64000

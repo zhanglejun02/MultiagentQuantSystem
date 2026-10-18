@@ -51,6 +51,7 @@ from quant_system.backtest.request import BacktestRequest, BacktestResult
 from quant_system.backtest.slippage import FixedBpsSlippageModel
 from quant_system.backtest.strategy import Strategy, StrategyContext
 from quant_system.data.providers.local_parquet import LocalParquetProvider
+from quant_system.data.snapshots.service import DataSnapshotService
 from quant_system.data.universe.service import UniverseService
 from quant_system.domain.enums import OrderSide, OrderStatus
 from quant_system.domain.exceptions import (
@@ -132,6 +133,24 @@ class EventDrivenBacktestEngine:
 
     # ------------------------------------------------------------------
     def run(self, request: BacktestRequest) -> BacktestResult:
+        if request.dataset_snapshot_id:
+            path = DataSnapshotService(self._store, self._registry).resolve_path(
+                request.dataset_snapshot_id
+            )
+            frozen_engine = EventDrivenBacktestEngine(
+                provider=LocalParquetProvider(str(path)),
+                rulebook=self._rulebook,
+                store=self._store,
+                registry=self._registry,
+                strategy_resolver=self._resolve_strategy,
+                risk_config=self._risk_config,
+                producer=self._producer,
+                code_commit=self._code_commit,
+            )
+            return frozen_engine._run(request)
+        return self._run(request)
+
+    def _run(self, request: BacktestRequest) -> BacktestResult:
         if request.rulebook_version != self._rulebook.rulebook_version:
             raise MarketRuleViolationError(
                 f"requested rulebook {request.rulebook_version} != loaded "
@@ -141,6 +160,8 @@ class EventDrivenBacktestEngine:
         days = self._provider.trading_calendar(request.start_date, request.end_date)
         if not days:
             raise QuantSystemError("no trading days in requested window")
+        if request.benchmark:
+            self._provider.benchmark_series(request.benchmark, days)
         clock = HistoricalClock(days)
         feed = MarketDataFeed(self._provider)
         universe_svc = UniverseService(self._provider)
@@ -313,6 +334,8 @@ class EventDrivenBacktestEngine:
                             target_spec=request.prediction_target.target.value,
                             prediction_horizon=request.prediction_target.prediction_horizon)
             )
+            if not decision.rebalance:
+                continue
             events.append(
                 TargetEvent(ts=as_of, trade_date=day, target_id=target_id,
                             strategy_id=request.strategy_id, weights=decision.weights)
@@ -549,7 +572,11 @@ class EventDrivenBacktestEngine:
         violations: list[str], ordered_qty: int, filled_qty: int,
         traded_value: Decimal, n_rejects: int, n_partials: int,
     ) -> BacktestResult:
-        performance = compute_performance_metrics(nav_series, request.initial_cash)
+        benchmark_series = (
+            self._provider.benchmark_series(request.benchmark, [day for day, _ in nav_series])
+            if request.benchmark else None
+        )
+        performance = compute_performance_metrics(nav_series, request.initial_cash, benchmark_series)
         performance.update(
             compute_prediction_ic(
                 scores_by_day, opens_by_day, closes_by_day, request.prediction_target

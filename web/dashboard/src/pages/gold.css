@@ -1,0 +1,356 @@
+.gold-page { --gold-green: #587b68; --gold-ochre: #95752f; --gold-teal: #4e7774; --gold-border: #e2dfe3; --gold-muted: #77717b; color: var(--text); padding-bottom: 24px; }
+.gold-page, .gold-page * { letter-spacing: 0; min-width: 0; }
+.gold-page a { color: var(--gold-teal); text-decoration: none; overflow-wrap: anywhere; }
+.gold-page a:hover { text-decoration: underline; }
+.gold-page a svg { vertical-align: middle; }
+.gold-page h1 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 22px; font-weight: 650; }
+.gold-page h1 svg { color: var(--gold-ochre); flex-shrink: 0; }
+.gold-page h2 { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; color: var(--text); font-size: 14px; }
+.gold-page small { color: var(--gold-muted); font-weight: 400; font-size: 11px; }
+.gold-header, .gold-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.gold-heading { margin-bottom: 12px; }
+.gold-heading h2 { margin: 0; }
+.gold-actions { display: flex; align-items: center; gap: 8px; }
+.gold-page button { border-color: var(--gold-border); border-radius: 5px; color: var(--accent-strong); background: #fff; box-shadow: none; }
+.gold-page button:hover { background: #f4eff6; border-color: #b49dbf; transform: none; box-shadow: none; }
+.gold-page button:disabled { transform: none; }
+.gold-page button:focus-visible, .gold-page input:focus-visible, .gold-page select:focus-visible, .gold-page textarea:focus-visible, .gold-page a:focus-visible { outline: 2px solid var(--gold-teal); outline-offset: 2px; }
+.gold-page input, .gold-page select, .gold-page textarea { border-color: var(--gold-border); color: var(--text); background: #fff; border-radius: 5px; font-family: inherit; }
+.gold-page input:focus, .gold-page select:focus, .gold-page textarea:focus { border-color: var(--gold-teal); outline-color: #cee9e5; }
+.gold-page input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--gold-green); cursor: pointer; }
+.gold-badge { display: inline-flex; align-items: center; color: var(--gold-ochre); border: 1px solid #e0d2ac; background: #fffaf0; border-radius: 4px; padding: 4px 7px; font-size: 11px; white-space: nowrap; }
+.gold-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 18px; margin: 9px 0; color: var(--gold-muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.gold-error, .gold-warning { display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px; margin: 8px 0; border-left: 3px solid #b28a34; background: #fff9eb; color: #805e19; font-size: 12px; overflow-wrap: anywhere; line-height: 1.6; }
+.gold-error { border-color: #bc5353; color: #983d3d; background: #fff1ef; }
+.gold-error svg, .gold-warning svg { flex-shrink: 0; margin-top: 2px; }
+.gold-warning-text { color: var(--gold-ochre); }
+.gold-success { color: var(--gold-green); font-size: 12px; padding-block: 6px; }
+.gold-loading { display: flex; align-items: center; gap: 8px; color: var(--gold-muted); padding: 12px 0; }
+.gold-warnings { margin: 10px 0; color: var(--gold-ochre); font-size: 12px; }
+.gold-warnings summary { cursor: pointer; }
+.gold-warnings ul { padding: 8px 20px; line-height: 1.7; overflow-wrap: anywhere; }
+.gold-tabs { display: flex; gap: 16px; border-bottom: 1px solid var(--gold-border); margin: 16px 0 0; }
+.gold-tabs button { padding: 10px 2px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--gold-muted); font-size: 13px; }
+.gold-tabs button.active { color: var(--accent-strong); border-bottom-color: var(--accent); }
+.gold-section { padding: 18px 0; border-bottom: 1px solid var(--gold-border); }
+.gold-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
+.gold-controls label { display: flex; flex-direction: column; gap: 5px; color: var(--gold-muted); font-size: 11px; }
+.gold-controls select { width: 255px; height: 34px; }
+.gold-segment { display: flex; flex: 0 0 auto; height: 34px; }
+.gold-segment button { justify-content: center; border-radius: 0; padding: 6px 10px; font-size: 12px; min-width: 42px; }
+.gold-segment button + button { margin-left: -1px; }
+.gold-segment button:first-child { border-radius: 5px 0 0 5px; }
+.gold-segment button:last-child { border-radius: 0 5px 5px 0; }
+.gold-segment button[aria-pressed="true"] { position: relative; border-color: var(--gold-green); background: #edf5ef; color: #195c48; }
+.gold-chart-meta { justify-content: space-between; margin-top: 14px; }
+.gold-chart { width: 100%; height: 320px; background: #fcfbf7; border-top: 1px solid #ece9e1; border-bottom: 1px solid #ece9e1; overflow: hidden; }
+.gold-empty { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 12px; min-height: 100%; padding: 24px; color: var(--gold-muted); }
+.gold-empty strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.gold-empty a { font-size: 12px; }
+.gold-risk, .gold-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.gold-risk > div { padding: 4px 12px; border-left: 1px solid var(--gold-border); }
+.gold-risk > div:first-child { border-left: 0; padding-left: 0; }
+.gold-risk span, .gold-summary span { display: block; color: var(--gold-muted); font-size: 11px; line-height: 1.6; }
+.gold-risk strong, .gold-summary strong { display: block; margin-top: 6px; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.gold-risk > div:nth-child(2) strong { color: var(--gold-ochre); }
+.gold-risk > div:nth-child(3) strong { color: var(--gold-teal); }
+.gold-risk > div:last-child strong { font-size: 15px; }
+.gold-table-wrap { width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.gold-table { font-size: 12px; text-align: left; }
+.gold-table th { background: #f2f6f3; color: var(--gold-muted); border-color: var(--gold-border); }
+.gold-table td { border-color: var(--gold-border); }
+.gold-table th, .gold-table td { padding: 9px 8px; }
+.gold-table td small { display: block; margin-top: 4px; }
+.gold-table tr:hover td, .gold-table tr.selected td { background: #edf5ef; }
+.gold-rise { color: #b64e49; }
+.gold-fall { color: var(--gold-green); }
+.gold-bottom { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 24px; }
+.gold-muted { color: var(--gold-muted); font-size: 12px; line-height: 1.8; }
+.gold-sources, .gold-comparison-sources { list-style: none; margin: 0; padding: 0; }
+.gold-sources li { padding: 8px 0; border-bottom: 1px solid #e5ece7; }
+.gold-sources li:last-child { border: 0; }
+.gold-sources small { display: block; line-height: 1.7; margin-top: 3px; overflow-wrap: anywhere; }
+.gold-sources a { font-size: 12px; }
+.gold-comparison-sources { color: var(--gold-muted); font-size: 10px; line-height: 1.8; overflow-wrap: anywhere; }
+.gold-source-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 28px; }
+.gold-provenance { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 12px; padding-top: 24px; font-size: 11px; color: var(--gold-muted); }
+.gold-provenance dd { overflow-wrap: anywhere; }
+.gold-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.gold-summary > div { padding: 10px 0; }
+.gold-summary strong { font-size: 20px; }
+.gold-form { max-width: 860px; }
+.gold-form fieldset { border: 0; padding: 0; }
+.gold-form legend { font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+.gold-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 22px; }
+.gold-form label { display: flex; flex-direction: column; gap: 7px; color: var(--gold-muted); font-size: 12px; }
+.gold-form input, .gold-form textarea { width: 100%; }
+.gold-holdings-head, .gold-holding { display: grid; grid-template-columns: minmax(100px, 1.2fr) repeat(2, minmax(0, 1fr)); align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--gold-border); }
+.gold-holdings-head { color: var(--gold-muted); font-size: 11px; align-items: start; }
+.gold-holding strong { display: block; font-size: 12px; }
+.gold-holding small { display: block; margin-top: 3px; }
+.gold-note { margin-top: 18px; }
+.gold-note textarea { resize: vertical; min-height: 76px; }
+.gold-form-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; color: var(--gold-muted); font-size: 11px; }
+.gold-account-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 20px 0; margin: 18px 0 4px; border-block: 1px solid var(--gold-border); }
+.gold-account-strip > div { padding-inline: 24px; border-left: 1px solid var(--gold-border); }
+.gold-account-strip > div:first-child { padding-left: 0; border: 0; }
+.gold-account-strip span { display: block; color: var(--gold-muted); font-size: 12px; }
+.gold-account-strip small { margin-left: 5px; }
+.gold-account-strip strong { display: block; margin-top: 9px; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.gold-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 332px; align-items: start; column-gap: 28px; }
+.gold-workspace[hidden] { display: none; }
+.gold-market-workarea { grid-column: 1; grid-row: 1; }
+.gold-market-details, .gold-research-report { grid-column: 1 / -1; }
+.gold-quote-section { padding-top: 0; }
+.gold-instrument-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid var(--gold-border); }
+.gold-instrument-tabs button { flex-direction: column; justify-content: center; align-items: flex-start; gap: 5px; min-height: 65px; padding: 12px 7px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--gold-muted); background: transparent; font-size: 12px; }
+.gold-instrument-tabs button[aria-selected="true"] { color: var(--gold-ochre); border-color: var(--gold-ochre); background: rgba(170, 133, 53, 0.05); }
+.gold-instrument-tabs small { font-size: 10px; color: inherit; }
+.gold-quote-overview { display: flex; justify-content: space-between; align-items: center; gap: 20px; min-height: 155px; padding-block: 20px; }
+.gold-quote-label { color: var(--text); font-size: 12px; }
+.gold-quote-label > span { margin-left: 8px; color: var(--gold-muted); font-size: 11px; }
+.gold-price { display: flex; align-items: baseline; gap: 10px; margin-block: 7px; }
+.gold-price strong { color: var(--gold-ochre); font-size: 36px; line-height: 1.15; font-weight: 600; font-variant-numeric: tabular-nums; }
+.gold-price > span { color: var(--gold-muted); font-size: 12px; }
+.gold-day-delta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.gold-day-delta > span { color: var(--gold-muted); font-size: 11px; }
+.gold-quote-provenance { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; font-size: 11px; text-align: right; }
+.gold-quote-provenance small { font-size: 10px; }
+.gold-controls { justify-content: space-between; }
+.gold-research-workspace { grid-column: 2; grid-row: 1; padding: 23px 0 20px 24px; border-left: 1px solid var(--gold-border); }
+.gold-research-workspace .gold-heading { gap: 8px; }
+.gold-research-workspace > .gold-heading { flex-wrap: wrap; }
+.gold-research-workspace h2 svg, .gold-report-title svg { color: var(--gold-ochre); }
+.gold-service-state { display: inline-flex; align-items: center; gap: 5px; color: var(--gold-muted); font-size: 10px; }
+.gold-service-state::before { content: ""; width: 6px; height: 6px; background: #a49ca6; border-radius: 50%; }
+.gold-service-state.ready { color: var(--gold-green); }
+.gold-service-state.ready::before { background: var(--gold-green); }
+.gold-research-form { display: flex; flex-direction: column; gap: 12px; }
+.gold-research-form label { display: flex; flex-direction: column; gap: 6px; color: var(--gold-muted); font-size: 11px; line-height: 1.6; }
+.gold-research-form select, .gold-research-form input, .gold-research-form textarea { width: 100%; padding: 8px; font-size: 12px; }
+.gold-research-form textarea { resize: vertical; min-height: 90px; line-height: 1.8; }
+.gold-research-inputs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.gold-field-note { margin-top: -7px; color: var(--gold-muted); font-size: 10px; }
+.gold-page .gold-research-primary { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 40px; color: #fff; background: var(--accent-strong); border-color: var(--accent-strong); }
+.gold-page .gold-research-primary:hover { background: #694279; }
+.gold-page .gold-text-button { border: 0; padding: 3px 0; background: transparent; font-size: 11px; color: var(--accent); }
+.gold-research-notice { margin-bottom: 12px; }
+.gold-budget { display: flex; justify-content: space-between; align-items: center; gap: 5px; margin-top: 8px; color: var(--gold-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.gold-budget .icon-button { flex: 0 0 24px; width: 24px; height: 24px; border: 0; background: transparent; color: var(--gold-muted); }
+.gold-model-routes { margin-top: 7px; color: var(--gold-muted); font-size: 10px; }
+.gold-model-routes summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; }
+.gold-model-routes summary::-webkit-details-marker { display: none; }
+.gold-model-routes[open] summary svg { transform: rotate(180deg); }
+.gold-model-routes dl { display: grid; gap: 8px; margin-top: 10px; }
+.gold-model-routes dl > div { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 10px; }
+.gold-model-routes dd { overflow-wrap: anywhere; color: var(--gold-teal); }
+.gold-pipeline { margin-top: 15px; border-top: 1px solid var(--gold-border); padding-top: 15px; }
+.gold-pipeline-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--gold-muted); font-size: 11px; }
+.gold-pipeline-heading strong { color: var(--text); font-weight: 600; }
+.gold-pipeline ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); list-style: none; gap: 12px 14px; margin-top: 14px; }
+.gold-pipeline li { display: grid; grid-template-columns: 14px minmax(0, 1fr); align-items: center; gap: 3px 5px; color: #aaa1ad; font-size: 11px; }
+.gold-pipeline li small { grid-column: 2; font-size: 10px; color: inherit; }
+.gold-pipeline li.complete { color: var(--gold-green); }
+.gold-pipeline li.current { color: var(--accent); }
+.gold-pipeline li.unconfirmed { color: var(--gold-ochre); }
+.gold-audit-progress { display: grid; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gold-border); font-size: 10px; color: var(--gold-muted); }
+.gold-audit-progress > div { display: flex; justify-content: space-between; gap: 10px; }
+.gold-audit-progress dt, .gold-audit-progress dd { overflow-wrap: anywhere; }
+.gold-audit-progress .complete { color: var(--gold-green); }
+.gold-audit-progress .current { color: var(--accent); }
+.gold-audit-progress .unconfirmed { color: var(--gold-ochre); }
+.gold-research-report { padding-block: 24px; }
+.gold-research-report h3 { font-size: 14px; font-weight: 600; color: var(--text); }
+.gold-research-report h4 { margin: 14px 0 6px; font-size: 12px; font-weight: 600; }
+.gold-research-report p, .gold-research-report li, .gold-rule-plan { line-height: 1.9; font-size: 12px; overflow-wrap: anywhere; }
+.gold-research-report ul { padding-left: 18px; }
+.gold-history-control { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; color: var(--gold-muted); font-size: 11px; }
+.gold-history-control select { width: 340px; font-size: 11px; padding: 7px 8px; }
+.gold-report-empty { min-height: 100px; display: flex; justify-content: center; align-items: center; flex-direction: column; gap: 10px; color: var(--gold-muted); font-size: 12px; }
+.gold-report-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 14px; padding-block: 12px; }
+.gold-report-heading h3 { margin-top: 6px; font-size: 17px; }
+.gold-report-date { color: var(--gold-muted); font-size: 11px; }
+.gold-report-flags { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.gold-report-flags .gold-muted { font-size: 10px; }
+.gold-evidence-meta { display: flex; flex-wrap: wrap; gap: 6px 20px; color: var(--gold-muted); font-size: 11px; padding: 9px 0 14px; border-bottom: 1px solid var(--gold-border); }
+.gold-evidence-meta strong { color: var(--text); font-weight: 500; margin-left: 5px; }
+.gold-report-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 30px; }
+.gold-report-part { padding-block: 20px; }
+.gold-report-part > h3 { margin-bottom: 10px; }
+.gold-deliberation { padding-block: 20px; border-bottom: 1px solid var(--gold-border); }
+.gold-deliberation > .gold-heading h3 { margin: 0; }
+.gold-review-status { color: var(--gold-teal); font-size: 11px; overflow-wrap: anywhere; }
+.gold-review-status[data-status="UNRESOLVED"], .gold-review-status[data-status="BUDGET_SKIPPED"] { color: var(--gold-ochre); }
+.gold-perspectives { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 20px; }
+.gold-perspective { padding-block: 10px; }
+.gold-perspective h4 { margin: 0 0 10px; }
+.gold-perspective-stance { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 11px; }
+.gold-perspective-stance strong { font-weight: 500; color: var(--gold-teal); }
+.gold-perspective-stance strong[data-view="BULLISH"] { color: var(--gold-green); }
+.gold-perspective-stance strong[data-view="BEARISH"] { color: #a24646; }
+.gold-perspective-stance strong[data-view="INSUFFICIENT_EVIDENCE"] { color: var(--gold-ochre); }
+.gold-perspective-stance > span { color: var(--gold-muted); font-variant-numeric: tabular-nums; }
+.gold-state-change { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-top: 10px; color: var(--gold-muted); font-size: 10px; line-height: 1.8; font-variant-numeric: tabular-nums; }
+.gold-state-change svg { color: var(--gold-teal); }
+.gold-perspective-skipped { color: var(--gold-ochre); }
+.gold-perspective-detail { border-top: 1px solid var(--gold-border); padding-top: 8px; font-size: 11px; }
+.gold-perspective-detail > summary { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--gold-teal); cursor: pointer; list-style: none; line-height: 1.8; }
+.gold-perspective-detail > summary::-webkit-details-marker, .gold-evidence-reference > summary::-webkit-details-marker { display: none; }
+.gold-perspective-detail[open] > summary svg { transform: rotate(180deg); }
+.gold-perspective-context > div { padding-block: 6px; }
+.gold-perspective-context dt { color: var(--gold-muted); }
+.gold-perspective-context dd, .gold-perspective-context ul { margin: 4px 0 0; }
+.gold-research-report .gold-perspective-claims, .gold-revision-list { padding-left: 16px; }
+.gold-perspective-claims > li, .gold-revision-list > li { padding-block: 4px; }
+.gold-revision-list { border-top: 1px solid var(--gold-border); padding-top: 8px; }
+.gold-disagreements, .gold-deliberation-gaps { padding-block: 12px 0; border-top: 1px solid var(--gold-border); margin-top: 12px; }
+.gold-disagreements .gold-heading { margin-bottom: 4px; }
+.gold-disagreements h4, .gold-deliberation-gaps h4 { margin: 0; }
+.gold-evidence-refs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin-block: 8px; font-size: 10px; overflow-wrap: anywhere; }
+.gold-evidence-refs > span { color: var(--gold-muted); }
+.gold-evidence-reference { max-width: 100%; color: var(--gold-teal); }
+.gold-evidence-reference > summary { display: flex; align-items: baseline; gap: 4px; cursor: pointer; list-style: none; }
+.gold-evidence-reference code { font-size: 10px; white-space: normal; overflow-wrap: anywhere; text-decoration: underline dotted; text-underline-offset: 3px; }
+.gold-evidence-reference[data-missing="true"] { color: var(--gold-ochre); }
+.gold-evidence-reference[open] { flex-basis: 100%; }
+.gold-evidence-reference dl { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 6px 10px; padding-block: 8px; color: var(--text); line-height: 1.8; }
+.gold-evidence-reference dt { color: var(--gold-muted); }
+.gold-perspective-detail > summary:focus-visible, .gold-evidence-reference > summary:focus-visible { outline: 2px solid var(--gold-teal); outline-offset: 2px; }
+.gold-local-plan .gold-rule-plan { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+.gold-evidence-catalog > div { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(0, 3fr); gap: 16px; padding-block: 12px; border-bottom: 1px solid var(--gold-border); font-size: 11px; line-height: 1.8; }
+.gold-evidence-catalog code, .gold-provenance code { font-size: 10px; white-space: normal; overflow-wrap: anywhere; }
+.gold-evidence-catalog dt small, .gold-evidence-catalog dd > * { display: block; }
+.gold-evidence-catalog dd strong { font-weight: 500; color: var(--gold-teal); font-variant-numeric: tabular-nums; }
+.gold-evidence-catalog dd span { padding-block: 3px; }
+.gold-rule-plan > div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; margin-block: 8px; }
+.gold-rule-plan dt { color: var(--gold-muted); }
+.gold-signal { color: var(--gold-ochre); font-size: 11px; }
+.gold-indicators { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; padding-block: 18px; border-block: 1px solid var(--gold-border); }
+.gold-indicators dt { color: var(--gold-muted); font-size: 11px; line-height: 1.7; }
+.gold-indicators dd { margin-top: 7px; font-size: 16px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.gold-diagnostic, .gold-decision { padding-block: 20px; border-bottom: 1px solid var(--gold-border); }
+.gold-diagnostic h3 small { display: inline-block; margin-left: 5px; }
+.gold-diagnostic-table { table-layout: fixed; }
+.gold-diagnostic-table th:first-child, .gold-diagnostic-table td:first-child { width: 44%; }
+.gold-diagnostic-table th, .gold-diagnostic-table td { white-space: normal; overflow-wrap: anywhere; }
+.gold-diagnostic-table th:not(:first-child), .gold-diagnostic-table td:not(:first-child) { text-align: right; }
+.gold-limitations { margin-top: 10px; color: var(--gold-ochre); }
+.gold-decision h3 { margin-bottom: 10px; }
+.gold-decision ul { margin-top: 10px; }
+.gold-audit { border-bottom: 1px solid var(--gold-border); padding-block: 14px; }
+.gold-audit > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; font-size: 12px; color: var(--accent-strong); }
+.gold-audit > summary::-webkit-details-marker { display: none; }
+.gold-audit > summary svg:last-child { margin-left: auto; }
+.gold-audit[open] > summary svg:last-child { transform: rotate(180deg); }
+.gold-audit-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 28px; margin-top: 8px; }
+.gold-audit-roles article { padding-block: 14px; border-bottom: 1px solid var(--gold-border); }
+.gold-audit-roles h4 { margin: 0; }
+.gold-audit-roles .gold-heading { flex-wrap: wrap; align-items: flex-start; gap: 6px; }
+.gold-audit-roles .gold-heading > span { color: var(--gold-muted); font-size: 10px; overflow-wrap: anywhere; }
+.gold-audit-route { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; color: var(--gold-muted); font-size: 11px; overflow-wrap: anywhere; }
+.gold-audit-route strong { color: var(--gold-teal); font-weight: 500; }
+.gold-local-gates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 28px; font-size: 11px; }
+.gold-local-gates > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #ece8ed; }
+.gold-local-gates dt { overflow-wrap: anywhere; }
+.gold-local-gates dd { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.gold-gate-pass { color: var(--gold-green); }
+.gold-gate-fail { color: #a24646; }
+.gold-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; padding-block: 12px; color: var(--gold-muted); font-size: 11px; line-height: 1.8; }
+.gold-investment-advice { padding-top: 20px; }
+.gold-investment-advice h3 { margin: 0; }
+.gold-investment-advice > .gold-heading { flex-wrap: wrap; align-items: flex-start; }
+.gold-advice-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.gold-advice-status { margin-block: 0 8px; color: var(--gold-ochre); font-weight: 500; }
+.gold-advice-status[data-status="PASS"] { color: var(--gold-green); }
+.gold-advice-status[data-status="REJECT"] { color: #a24646; }
+.gold-advice-audit-reason { margin-block: 6px; color: var(--gold-muted); }
+.gold-advice-audit-issues { margin-block: 8px; color: var(--gold-ochre); }
+.gold-research-report .gold-advice-summary { margin: 0 0 6px; font-size: 15px; line-height: 1.8; font-weight: 500; }
+.gold-advice-reasons { margin-block: 10px; }
+.gold-advice-reasons strong { font-weight: 500; }
+.gold-advice-reassess { margin-block: 8px; }
+.gold-advice-limitations { margin-bottom: 0; color: var(--gold-muted); }
+.gold-advice-audit { margin-top: 12px; border-top: 1px solid var(--gold-border); border-bottom: 0; padding-block: 12px 0; }
+.gold-advice-audit > summary { flex-wrap: wrap; line-height: 1.7; }
+.gold-advice-audit-rounds { list-style: none; margin: 0; padding: 0; }
+.gold-advice-audit-rounds > li { padding-block: 12px; border-bottom: 1px solid var(--gold-border); }
+.gold-advice-audit-rounds .gold-heading { flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.gold-advice-audit-rounds h4, .gold-advice-audit-rounds p { margin-block: 4px; }
+.gold-advice-audit-decision { font-size: 11px; color: var(--gold-ochre); }
+.gold-advice-audit-decision[data-decision="PASS"] { color: var(--gold-green); }
+.gold-advice-audit-decision[data-decision="REJECT"] { color: #a24646; }
+.gold-advice-audit-hash code { font-size: 10px; overflow-wrap: anywhere; white-space: normal; }
+.gold-page .icon-button { flex-shrink: 0; }
+.gold-page svg { flex-shrink: 0; }
+.gold-spin { animation: gold-spin 1.4s linear infinite; }
+@keyframes gold-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .gold-spin { animation: none; } }
+@media (max-width: 1180px) {
+  .gold-workspace { grid-template-columns: minmax(0, 1fr); }
+  .gold-research-workspace { grid-column: 1; grid-row: auto; border-left: 0; border-bottom: 1px solid var(--gold-border); padding: 22px 0; }
+  .gold-research-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gold-research-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 12px 24px; }
+  .gold-research-form > label { grid-column: 2; grid-row: 1 / 3; }
+  .gold-research-form .gold-field-note { grid-column: 1; }
+  .gold-research-primary { grid-column: 2; }
+  .gold-pipeline ol { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .gold-pipeline li { font-size: 10px; }
+}
+@media (max-width: 1000px) {
+  .gold-risk, .gold-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gold-perspectives { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gold-bottom { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+@media (max-width: 600px) {
+  .gold-page h1 { font-size: 20px; }
+  .gold-header { gap: 14px; }
+  .gold-actions { width: 100%; flex-wrap: wrap; gap: 6px; }
+  .gold-actions .gold-badge { margin-right: auto; }
+  .gold-actions > button { font-size: 11px; padding-inline: 7px; }
+  .gold-actions > .icon-button { padding: 0; }
+  .gold-account-strip { gap: 6px; padding-block: 15px; }
+  .gold-account-strip > div { padding-inline: 10px; }
+  .gold-account-strip span { font-size: 11px; }
+  .gold-account-strip small { display: block; margin: 4px 0 0; font-size: 10px; }
+  .gold-account-strip strong { font-size: 19px; }
+  .gold-tabs { gap: 22px; }
+  .gold-instrument-tabs { display: flex; overflow-x: auto; overscroll-behavior-x: contain; }
+  .gold-instrument-tabs button { flex: 0 0 99px; min-height: 65px; padding-left: 10px; }
+  .gold-quote-overview { align-items: flex-start; gap: 12px; }
+  .gold-quote-provenance { max-width: 140px; }
+  .gold-quote-provenance .gold-badge { padding-inline: 4px; font-size: 10px; white-space: normal; }
+  .gold-price strong { font-size: 32px; }
+  .gold-price { gap: 6px; }
+  .gold-quote-label { font-size: 11px; }
+  .gold-quote-label > span { display: block; margin: 5px 0 0; }
+  .gold-day-delta { gap: 5px 8px; }
+  .gold-controls { gap: 10px; }
+  .gold-controls label { width: 100%; }
+  .gold-controls select { width: 100%; }
+  .gold-segment button { padding-inline: 8px; min-width: 39px; }
+  .gold-risk { gap: 8px; }
+  .gold-risk > div { padding: 8px 10px; }
+  .gold-risk > div:nth-child(3) { border-left: 0; padding-left: 0; }
+  .gold-risk strong, .gold-summary strong { font-size: 17px; }
+  .gold-source-grid, .gold-fields { grid-template-columns: minmax(0, 1fr); }
+  .gold-holding, .gold-holdings-head { grid-template-columns: minmax(95px, 1fr) repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .gold-holding input { padding: 7px 5px; }
+  .gold-holding strong { font-size: 11px; }
+  .gold-research-form { display: flex; gap: 12px; }
+  .gold-research-inputs { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .gold-pipeline ol { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
+  .gold-pipeline li { font-size: 11px; }
+  .gold-history-control { width: 100%; }
+  .gold-history-control label { flex: 1 0 100%; }
+  .gold-history-control select { flex: 1; width: 0; }
+  .gold-report-columns, .gold-audit-roles, .gold-local-gates { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .gold-perspectives { grid-template-columns: minmax(0, 1fr); }
+  .gold-perspective + .gold-perspective { border-top: 1px solid var(--gold-border); padding-top: 14px; }
+  .gold-local-plan .gold-rule-plan, .gold-evidence-catalog > div { grid-template-columns: minmax(0, 1fr); }
+  .gold-evidence-catalog > div { gap: 6px; }
+  .gold-report-part { padding-block: 14px; }
+  .gold-report-flags { align-items: flex-start; }
+  .gold-indicators { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }
+  .gold-diagnostic h3 small { display: block; margin: 7px 0 0; }
+  .gold-rule-plan > div { grid-template-columns: 57px minmax(0, 1fr); gap: 8px; }
+}

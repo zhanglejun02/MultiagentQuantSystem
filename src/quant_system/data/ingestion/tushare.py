@@ -30,9 +30,7 @@ ADJ_FACTOR_FIELDS = "ts_code,trade_date,adj_factor"
 SUSPEND_FIELDS = "ts_code,trade_date,suspend_timing,suspend_type"
 NAMECHANGE_FIELDS = "ts_code,name,start_date,end_date,ann_date,change_reason"
 INDEX_DAILY_FIELDS = "ts_code,trade_date,close,pre_close,change,pct_chg,vol,amount"
-FUTURES_DAILY_FIELDS = (
-    "ts_code,trade_date,pre_close,pre_settle,open,high,low,close,settle,vol,amount,oi"
-)
+FUTURES_DAILY_FIELDS = "ts_code,trade_date,pre_close,pre_settle,open,high,low,close,settle,vol,amount,oi"
 FUTURES_EXCHANGES = ("CFFEX", "SHFE", "INE", "DCE", "CZCE", "GFEX")
 BENCHMARK_INDICES = (
     "000001.SH",
@@ -155,7 +153,7 @@ class TushareDailySync:
                 params={"trade_date": trading_day.strftime("%Y%m%d")},
                 fields=DAILY_FIELDS,
             )
-            fetched.extend(self._normalize_bar(row) for row in rows if _is_supported_code(row))
+            fetched.extend(normalize_equity_bar(row) for row in rows if _is_supported_code(row))
 
         bars_path = destination / "bars.parquet"
         existing = [] if overwrite else _read_existing_bars(bars_path)
@@ -240,24 +238,6 @@ class TushareDailySync:
                 )
         unique = {(row["symbol"], row["available_at"]): row for row in records}
         return sorted(unique.values(), key=lambda row: (row["symbol"], row["available_at"]))
-
-    @staticmethod
-    def _normalize_bar(row: dict[str, Any]) -> dict[str, Any]:
-        trading_day = _parse_date(row["trade_date"])
-        volume = int((Decimal(str(row["vol"])) * Decimal("100")).to_integral_value())
-        amount = Decimal(str(row["amount"])) * Decimal("1000")
-        return {
-            "symbol": _normalize_symbol(str(row["ts_code"])),
-            "trade_date": trading_day,
-            "open": float(row["open"]),
-            "high": float(row["high"]),
-            "low": float(row["low"]),
-            "close": float(row["close"]),
-            "prev_close": float(row["pre_close"]),
-            "volume": volume,
-            "amount": float(amount),
-            "available_at": bar_available_at(trading_day),
-        }
 
 
 @dataclass(frozen=True)
@@ -345,15 +325,9 @@ class TushareMarketDaySync:
 
         datasets: dict[str, list[dict[str, Any]]] = {
             "trade_calendar": (
-                [{"trade_date": trade_date, "is_open": 1, "exchange": "SSE"}]
-                if calendar
-                else []
+                [{"trade_date": trade_date, "is_open": 1, "exchange": "SSE"}] if calendar else []
             ),
-            "equity_daily": [
-                TushareDailySync._normalize_bar(row)
-                for row in equity_rows
-                if _is_supported_code(row)
-            ],
+            "equity_daily": [normalize_equity_bar(row) for row in equity_rows if _is_supported_code(row)],
             "futures_daily": [self._normalize_futures_bar(row) for row in futures_raw],
         }
         optional_queries = {
@@ -442,14 +416,30 @@ class TushareMarketDaySync:
             "low": float(row["low"]),
             "close": float(row["close"]),
             "settlement": float(row["settle"]) if row.get("settle") is not None else None,
-            "pre_settlement": (
-                float(row["pre_settle"]) if row.get("pre_settle") is not None else None
-            ),
+            "pre_settlement": (float(row["pre_settle"]) if row.get("pre_settle") is not None else None),
             "volume": int(row.get("vol") or 0),
             "amount": float(row.get("amount") or 0),
             "open_interest": int(row.get("oi") or 0),
             "available_at": bar_available_at(trading_day),
         }
+
+
+def normalize_equity_bar(row: dict[str, Any]) -> dict[str, Any]:
+    trading_day = _parse_date(row["trade_date"])
+    volume = int((Decimal(str(row["vol"])) * Decimal("100")).to_integral_value())
+    amount = Decimal(str(row["amount"])) * Decimal("1000")
+    return {
+        "symbol": _normalize_symbol(str(row["ts_code"])),
+        "trade_date": trading_day,
+        "open": float(row["open"]),
+        "high": float(row["high"]),
+        "low": float(row["low"]),
+        "close": float(row["close"]),
+        "prev_close": float(row["pre_close"]),
+        "volume": volume,
+        "amount": float(amount),
+        "available_at": bar_available_at(trading_day),
+    }
 
 
 def _parse_date(value: object) -> date:

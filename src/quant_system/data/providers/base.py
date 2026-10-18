@@ -4,6 +4,7 @@ those become adapters implementing these protocols."""
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Protocol
 
 from quant_system.domain.models import Bar, CorporateActionRecord, SecurityMaster, StatusInterval
@@ -17,6 +18,8 @@ class MarketDataProvider(Protocol):
         ...
 
     def trading_calendar(self, start: date, end: date) -> list[date]: ...
+
+    def adjusted_closes(self, bars: list[Bar], *, as_of: datetime) -> dict[tuple[str, date], Decimal]: ...
 
 
 class ReferenceDataProvider(Protocol):

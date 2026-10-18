@@ -36,3 +36,6 @@ class MarketDataFeed:
         if not volumes:
             return 0
         return int(sum(Decimal(volume) for volume in volumes) / len(volumes))
+
+    def adjusted_closes(self, bars: list[Bar], *, as_of: datetime) -> dict[tuple[str, date], Decimal]:
+        return self._provider.adjusted_closes(bars, as_of=as_of)
