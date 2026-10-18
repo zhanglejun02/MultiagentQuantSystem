@@ -14,6 +14,7 @@ from quant_system.agents.llm import LLMMessage, LLMResponse
 from quant_system.agents.orchestration import (
     AgentResearchOrchestrator,
     AgentResearchRequest,
+    AgentResearchResult,
     CriticReview,
     FactorCandidate,
     OrchestratorDecision,
@@ -21,6 +22,7 @@ from quant_system.agents.orchestration import (
     _parse_structured,
 )
 from quant_system.artifacts.registry import ArtifactRegistry
+from quant_system.artifacts.store import LocalArtifactStore
 from quant_system.data.providers.local_parquet import LocalParquetProvider
 from quant_system.data.snapshots.service import DataSnapshotService
 from quant_system.domain.enums import ArtifactType, ExperimentState
@@ -28,7 +30,12 @@ from quant_system.domain.exceptions import QuantSystemError
 from quant_system.factors.evaluation import FactorLab
 from quant_system.infra.db import create_all, make_engine, make_session_factory
 from quant_system.research.experiments import ExperimentService
+from quant_system.research.modules.factor import factor_tasks
 from quant_system.research.runtime.calls import BudgetLedger, BudgetLimits, StructuredCaller
+from quant_system.research.runtime.engine import ResearchRuntime
+from quant_system.research.runtime.models import RunRequest
+from quant_system.research.runtime.ports import ModuleRegistry
+from quant_system.research.runtime.storage import ArtifactRunRepository
 
 
 class FakeGateway:
@@ -133,6 +140,32 @@ def _config() -> AgentLLMConfig:
     )
 
 
+def _factor_runtime(orchestrator, *, config, gateway, store, registry) -> ResearchRuntime:
+    modules = ModuleRegistry()
+    for task in factor_tasks(orchestrator):
+        modules.register(task)
+    return ResearchRuntime(
+        modules, ArtifactRunRepository(store, registry), config, gateway, credentials_required=False
+    )
+
+
+def _execute(runtime: ResearchRuntime, request: AgentResearchRequest) -> AgentResearchResult:
+    payload = request.model_dump(mode="json")
+    if request.data_snapshot_id:
+        payload["data_mode"] = "frozen_snapshot"
+    submitted = runtime.submit(RunRequest(task_type="factor.research", payload=payload))
+    runtime.execute(submitted.run_id)
+    run = runtime.get(submitted.run_id)
+    if run.status != "COMPLETED" or run.result is None:
+        raise QuantSystemError(run.error or f"factor research {run.status.lower()}")
+    return AgentResearchResult.model_validate(run.result.payload)
+
+
+def _run(orchestrator, request, *, config, gateway, store, registry) -> AgentResearchResult:
+    runtime = _factor_runtime(orchestrator, config=config, gateway=gateway, store=store, registry=registry)
+    return _execute(runtime, request)
+
+
 def test_structured_response_accepts_json_code_fence() -> None:
     candidate = _parse_structured(
         '```json\n{"name":"Momentum","hypothesis":"Trend","expression":"rank(close)","horizon":"1d"}\n```',
@@ -216,20 +249,29 @@ def test_reviews_run_concurrently_with_independent_local_evidence(tmp_path: Path
     gateway = IndependentReviewGateway()
     gateway.responses["researcher"]["name"] = "AUTHOR_NAME_SENTINEL"
     gateway.responses["researcher"]["hypothesis"] = "AUTHOR_NARRATIVE_SENTINEL"
+    config = _config()
+    local_store = LocalArtifactStore(str(tmp_path / "artifacts"))
+    local_registry = ArtifactRegistry(sessions)
     orchestrator = AgentResearchOrchestrator(
-        config=_config(),
+        config=config,
         gateway=gateway,
         experiments=ExperimentService(sessions),
         factor_lab=ObservedFactorLab(sessions, LocalParquetProvider(provider.data_dir.as_posix())),
-        registry=ArtifactRegistry(sessions),
+        registry=local_registry,
+        store=local_store,
     )
 
-    result = orchestrator.run(
+    result = _run(
+        orchestrator,
         AgentResearchRequest(
             topic="Independent factor review",
             start_date="2024-02-01",
             end_date="2024-05-31",
-        )
+        ),
+        config=config,
+        gateway=gateway,
+        store=local_store,
+        registry=local_registry,
     )
 
     assert gateway.roles == ["researcher", "statistician", "critic", "orchestrator"]
@@ -299,20 +341,28 @@ def test_four_agent_loop_runs_deterministic_evaluation_and_persists_report(tmp_p
     gateway = FakeGateway()
     registry = ArtifactRegistry(session_factory)
     experiments = ExperimentService(session_factory)
+    config = _config()
+    local_store = LocalArtifactStore(str(tmp_path / "artifacts"))
     orchestrator = AgentResearchOrchestrator(
-        config=_config(),
+        config=config,
         gateway=gateway,
         experiments=experiments,
         factor_lab=FactorLab(session_factory, LocalParquetProvider(provider.data_dir.as_posix())),
         registry=registry,
+        store=local_store,
     )
 
-    result = orchestrator.run(
+    result = _run(
+        orchestrator,
         AgentResearchRequest(
             topic="寻找一个可解释的中期量价因子",
             start_date="2024-02-01",
             end_date="2024-05-31",
-        )
+        ),
+        config=config,
+        gateway=gateway,
+        store=local_store,
+        registry=registry,
     )
 
     assert gateway.roles[0] == "researcher"
@@ -336,20 +386,29 @@ def test_critic_rejection_still_completes_auditable_four_agent_loop(tmp_path: Pa
         "issues": ["economic rationale is weak"],
         "rationale": "reject but retain deterministic evidence",
     }
+    config = _config()
+    local_store = LocalArtifactStore(str(tmp_path / "artifacts"))
+    local_registry = ArtifactRegistry(session_factory)
     orchestrator = AgentResearchOrchestrator(
-        config=_config(),
+        config=config,
         gateway=gateway,
         experiments=ExperimentService(session_factory),
         factor_lab=FactorLab(session_factory, LocalParquetProvider(provider.data_dir.as_posix())),
-        registry=ArtifactRegistry(session_factory),
+        registry=local_registry,
+        store=local_store,
     )
 
-    result = orchestrator.run(
+    result = _run(
+        orchestrator,
         AgentResearchRequest(
             topic="审计被 Critic 否决的候选",
             start_date="2024-02-01",
             end_date="2024-05-31",
-        )
+        ),
+        config=config,
+        gateway=gateway,
+        store=local_store,
+        registry=local_registry,
     )
 
     assert gateway.roles[0] == "researcher"
@@ -365,20 +424,29 @@ def test_researcher_repairs_locally_rejected_dsl_once(tmp_path: Path, provider) 
     create_all(engine)
     session_factory = make_session_factory(engine)
     gateway = RepairingGateway()
+    config = _config()
+    local_store = LocalArtifactStore(str(tmp_path / "artifacts"))
+    local_registry = ArtifactRegistry(session_factory)
     orchestrator = AgentResearchOrchestrator(
-        config=_config(),
+        config=config,
         gateway=gateway,
         experiments=ExperimentService(session_factory),
         factor_lab=FactorLab(session_factory, LocalParquetProvider(provider.data_dir.as_posix())),
-        registry=ArtifactRegistry(session_factory),
+        registry=local_registry,
+        store=local_store,
     )
 
-    result = orchestrator.run(
+    result = _run(
+        orchestrator,
         AgentResearchRequest(
             topic="修复非法 DSL 候选",
             start_date="2024-02-01",
             end_date="2024-05-31",
-        )
+        ),
+        config=config,
+        gateway=gateway,
+        store=local_store,
+        registry=local_registry,
     )
 
     assert gateway.roles[:2] == ["researcher", "researcher"]
@@ -393,20 +461,29 @@ def test_role_repairs_invalid_response_schema_once(tmp_path: Path, provider) -> 
     create_all(engine)
     session_factory = make_session_factory(engine)
     gateway = SchemaRepairingGateway()
+    config = _config()
+    local_store = LocalArtifactStore(str(tmp_path / "artifacts"))
+    local_registry = ArtifactRegistry(session_factory)
     orchestrator = AgentResearchOrchestrator(
-        config=_config(),
+        config=config,
         gateway=gateway,
         experiments=ExperimentService(session_factory),
         factor_lab=FactorLab(session_factory, LocalParquetProvider(provider.data_dir.as_posix())),
-        registry=ArtifactRegistry(session_factory),
+        registry=local_registry,
+        store=local_store,
     )
 
-    result = orchestrator.run(
+    result = _run(
+        orchestrator,
         AgentResearchRequest(
             topic="修复统计审查响应结构",
             start_date="2024-02-01",
             end_date="2024-05-31",
-        )
+        ),
+        config=config,
+        gateway=gateway,
+        store=local_store,
+        registry=local_registry,
     )
 
     assert gateway.roles[0] == "researcher"
@@ -429,23 +506,31 @@ def test_call_budget_stops_before_an_extra_provider_request(tmp_path: Path, prov
         }
     )
     gateway = SchemaRepairingGateway()
+    local_store = LocalArtifactStore(str(tmp_path / "artifacts"))
+    local_registry = ArtifactRegistry(sessions)
     orchestrator = AgentResearchOrchestrator(
         config=config,
         gateway=gateway,
         experiments=ExperimentService(sessions),
         factor_lab=FactorLab(sessions, LocalParquetProvider(provider.data_dir.as_posix())),
-        registry=ArtifactRegistry(sessions),
+        registry=local_registry,
+        store=local_store,
     )
     with pytest.raises(QuantSystemError, match="call budget exceeded"):
-        orchestrator.run(
-            AgentResearchRequest(topic="预算边界检查", start_date="2024-02-01", end_date="2024-05-31")
+        _run(
+            orchestrator,
+            AgentResearchRequest(topic="预算边界检查", start_date="2024-02-01", end_date="2024-05-31"),
+            config=config,
+            gateway=gateway,
+            store=local_store,
+            registry=local_registry,
         )
     assert gateway.roles[0] == "researcher"
     assert sorted(gateway.roles[1:]) == ["critic", "statistician", "statistician"]
 
 
 def test_review_token_budget_is_reserved_together_before_paid_calls(
-    session_factory, registry, provider
+    session_factory, registry, store, provider
 ) -> None:
     config = _config()
     config = config.model_copy(
@@ -461,11 +546,19 @@ def test_review_token_budget_is_reserved_together_before_paid_calls(
         experiments=experiments,
         factor_lab=FactorLab(session_factory, provider),
         registry=registry,
+        store=store,
     )
 
     with pytest.raises(QuantSystemError, match="token budget exceeded"):
-        orchestrator.run(
-            AgentResearchRequest(topic="Reserve both reviews", start_date="2024-02-01", end_date="2024-05-31")
+        _run(
+            orchestrator,
+            AgentResearchRequest(
+                topic="Reserve both reviews", start_date="2024-02-01", end_date="2024-05-31"
+            ),
+            config=config,
+            gateway=gateway,
+            store=store,
+            registry=registry,
         )
 
     assert gateway.roles == ["researcher"]
@@ -584,7 +677,7 @@ def test_concurrent_schema_repairs_cannot_exceed_budget(monkeypatch, budget_kind
 
 
 def test_parallel_runs_keep_independent_call_budgets_on_one_orchestrator(
-    session_factory, registry, provider
+    session_factory, registry, store, provider
 ) -> None:
     barrier = Barrier(2, timeout=5)
 
@@ -606,13 +699,18 @@ def test_parallel_runs_keep_independent_call_budgets_on_one_orchestrator(
         experiments=ExperimentService(session_factory),
         factor_lab=FactorLab(session_factory, provider),
         registry=registry,
+        store=store,
     )
     request = AgentResearchRequest(
         topic="Independent run budgets", start_date="2024-02-01", end_date="2024-05-31"
     )
+    runtimes = [
+        _factor_runtime(orchestrator, config=config, gateway=gateway, store=store, registry=registry)
+        for _ in range(2)
+    ]
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        futures = [pool.submit(orchestrator.run, request) for _ in range(2)]
+        futures = [pool.submit(_execute, runtime, request) for runtime in runtimes]
         results = [future.result() for future in futures]
 
     assert len({result.trace_id for result in results}) == 2
@@ -629,7 +727,7 @@ def test_parallel_runs_keep_independent_call_budgets_on_one_orchestrator(
 
 @pytest.mark.parametrize("rejecting_gate", ["statistician", "orchestrator", "local"])
 def test_candidate_acceptance_still_requires_every_gate(
-    session_factory, registry, provider, rejecting_gate
+    session_factory, registry, store, provider, rejecting_gate
 ) -> None:
     config = _config()
     gateway = FakeGateway()
@@ -647,12 +745,18 @@ def test_candidate_acceptance_still_requires_every_gate(
         experiments=ExperimentService(session_factory),
         factor_lab=FactorLab(session_factory, provider),
         registry=registry,
+        store=store,
     )
 
-    result = orchestrator.run(
+    result = _run(
+        orchestrator,
         AgentResearchRequest(
             topic="All acceptance gates remain mandatory", start_date="2024-02-01", end_date="2024-05-31"
-        )
+        ),
+        config=config,
+        gateway=gateway,
+        store=store,
+        registry=registry,
     )
 
     assert result.experiment.state == ExperimentState.REJECTED
@@ -665,19 +769,29 @@ def test_candidate_acceptance_still_requires_every_gate(
 def test_snapshot_binding_fails_before_any_provider_request(
     session_factory, registry, store, provider, binding
 ):
+    class OpaqueStore:
+        """Not a LocalArtifactStore, so the orchestrator cannot build a snapshot resolver."""
+
+        def __init__(self, delegate):
+            self._delegate = delegate
+
+        def put_content_addressed_json(self, namespace, payload):
+            return self._delegate.put_content_addressed_json(namespace, payload)
+
     snapshots = DataSnapshotService(store, registry)
     snapshot = snapshots.create_snapshot(str(provider.data_dir), producer="factor-test")
     frozen = snapshots.resolve_path(snapshot.artifact_id)
     if binding == "tampered":
         (frozen / "securities.json").write_text("[]")
     gateway = FakeGateway()
+    config = _config()
     orchestrator = AgentResearchOrchestrator(
-        config=_config(),
+        config=config,
         gateway=gateway,
         experiments=ExperimentService(session_factory),
         factor_lab=FactorLab(session_factory, provider),
         registry=registry,
-        store=store if binding != "unresolved" else None,
+        store=store if binding != "unresolved" else OpaqueStore(store),
     )
     with pytest.raises(
         QuantSystemError,
@@ -687,13 +801,18 @@ def test_snapshot_binding_fails_before_any_provider_request(
             "tampered": "integrity check failed",
         }[binding],
     ):
-        orchestrator.run(
+        _run(
+            orchestrator,
             AgentResearchRequest(
                 topic="Verify actual factor snapshot",
                 start_date="2024-02-01",
                 end_date="2024-05-31",
                 data_snapshot_id=snapshot.artifact_id,
-            )
+            ),
+            config=config,
+            gateway=gateway,
+            store=store,
+            registry=registry,
         )
     assert gateway.roles == []
 
@@ -723,8 +842,9 @@ def test_snapshot_binding_preserves_development_provider_and_date_cap(
         pytest.fail("an already snapshot-bound development provider must not be replaced")
 
     gateway = FakeGateway()
+    config = _config()
     orchestrator = AgentResearchOrchestrator(
-        config=_config(),
+        config=config,
         gateway=gateway,
         experiments=ExperimentService(session_factory),
         factor_lab=lab,
@@ -733,13 +853,15 @@ def test_snapshot_binding_preserves_development_provider_and_date_cap(
         snapshot_service=snapshots,
         factor_lab_factory=unexpected_factory,
     )
-    result = orchestrator.run(
+    runtime = _factor_runtime(orchestrator, config=config, gateway=gateway, store=store, registry=registry)
+    result = _execute(
+        runtime,
         AgentResearchRequest(
             topic="Preserve development cutoff",
             start_date="2024-02-01",
             end_date="2024-05-31",
             data_snapshot_id=snapshot.artifact_id,
-        )
+        ),
     )
 
     assert reads and max(reads) <= end
@@ -748,66 +870,84 @@ def test_snapshot_binding_preserves_development_provider_and_date_cap(
     assert result.experiment_run.data_snapshot_id == snapshot.artifact_id
     report = registry.get(result.report_artifact_id)
     assert report.data_snapshot_id == snapshot.artifact_id
-    assert len(report.metadata["call_receipts"]) == 4
-    for reference in report.metadata["call_receipts"]:
-        receipt = store.get_json(reference["uri"])
-        assert receipt["status"] == "COMPLETED"
-        assert receipt["messages"] and receipt["response"]["raw_request_id"]
+    references = report.metadata["call_receipts"]
+    assert len(references) == 4
+    assert all(reference["status"] == "COMPLETED" for reference in references)
+    run_id = references[0]["run_id"]
+    receipts = runtime.calls(run_id, limit=100)
+    assert len(receipts) == 4
+    for receipt in receipts:
+        assert receipt.status == "COMPLETED"
+        assert receipt.messages and receipt.response is not None
+        assert receipt.response.raw_request_id
 
 
-def test_standalone_failure_persists_request_before_send_and_failed_receipt(
+def test_runtime_failure_persists_request_before_send_and_failed_receipt(
     session_factory, registry, store, provider
 ):
+    holder: dict[str, ResearchRuntime] = {}
+
     class FailingGateway(FakeGateway):
         def complete(self, role, messages):
-            paths = list((store.root / "research/factor/calls").rglob("*.json"))
-            assert len(paths) == 1
-            receipt = store.get_json(paths[0].as_uri())
-            assert receipt["status"] == "STARTED"
-            assert receipt["messages"] == [message.model_dump(mode="json") for message in messages]
+            runtime = holder["runtime"]
+            run_id = runtime.status()["active_run_id"]
+            receipts = runtime.calls(run_id)
+            assert len(receipts) == 1
+            assert receipts[0].status == "STARTED"
+            assert receipts[0].messages == messages
+            assert receipts[0].response is None
             self.roles.append(role)
             raise QuantSystemError("provider unavailable")
 
     experiments = ExperimentService(session_factory)
     gateway = FailingGateway()
+    config = _config()
     orchestrator = AgentResearchOrchestrator(
-        config=_config(),
+        config=config,
         gateway=gateway,
         experiments=experiments,
         factor_lab=FactorLab(session_factory, provider),
         registry=registry,
         store=store,
     )
+    runtime = _factor_runtime(orchestrator, config=config, gateway=gateway, store=store, registry=registry)
+    holder["runtime"] = runtime
     with pytest.raises(QuantSystemError, match="provider unavailable"):
-        orchestrator.run(
+        _execute(
+            runtime,
             AgentResearchRequest(
                 topic="Retain failed model call", start_date="2024-02-01", end_date="2024-05-31"
-            )
+            ),
         )
 
     assert gateway.roles == ["researcher"]
-    receipts = [
-        store.get_json(path.as_uri()) for path in (store.root / "research/factor/calls").rglob("*.json")
-    ]
-    assert {receipt["status"] for receipt in receipts} == {"STARTED", "FAILED"}
-    failed = next(receipt for receipt in receipts if receipt["status"] == "FAILED")
-    assert failed["messages"]
-    assert failed["response"] is None
-    assert failed["error"] == "provider unavailable"
-    assert failed["used_tokens"] == failed["reservation_tokens"] > 0
+    failed_run = runtime.list_runs(limit=10)[0]
+    assert failed_run.status == "FAILED"
+    receipts = runtime.calls(failed_run.run_id)
+    assert [receipt.status for receipt in receipts] == ["FAILED"]
+    failed = receipts[0]
+    assert failed.messages
+    assert failed.response is None
+    assert failed.error == "provider unavailable"
+    assert failed.used_tokens == failed.reservation_tokens > 0
     assert registry.find_by_type(ArtifactType.RESEARCH_REPORT) == []
 
 
 def test_audit_store_failure_prevents_paid_call_and_keeps_domain_error(
     session_factory, registry, store, provider, monkeypatch
 ):
-    def unavailable_store(*args, **kwargs):
-        raise OSError("audit disk unavailable")
+    original = store.put_content_addressed_json
 
-    monkeypatch.setattr(store, "put_content_addressed_json", unavailable_store)
+    def unavailable_for_calls(namespace, payload):
+        if "/calls" in f"/{namespace}":
+            raise OSError("audit disk unavailable")
+        return original(namespace, payload)
+
+    monkeypatch.setattr(store, "put_content_addressed_json", unavailable_for_calls)
     gateway = FakeGateway()
+    config = _config()
     orchestrator = AgentResearchOrchestrator(
-        config=_config(),
+        config=config,
         gateway=gateway,
         experiments=ExperimentService(session_factory),
         factor_lab=FactorLab(session_factory, provider),
@@ -815,9 +955,14 @@ def test_audit_store_failure_prevents_paid_call_and_keeps_domain_error(
         store=store,
     )
     with pytest.raises(QuantSystemError, match="call audit sink failed"):
-        orchestrator.run(
+        _run(
+            orchestrator,
             AgentResearchRequest(
                 topic="Fail closed on unavailable audit", start_date="2024-02-01", end_date="2024-05-31"
-            )
+            ),
+            config=config,
+            gateway=gateway,
+            store=store,
+            registry=registry,
         )
     assert gateway.roles == []

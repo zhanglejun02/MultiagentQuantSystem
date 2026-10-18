@@ -133,7 +133,9 @@ class GoldService:
                         f"{old_quote.symbol}: retained prior quotation dated {old_quote.points[-1].date}"
                     )
         snapshot = GoldSnapshot(
-            fetched_at=now, quotes=list(by_symbol.values()), warnings=warnings,
+            fetched_at=now,
+            quotes=list(by_symbol.values()),
+            warnings=warnings,
             retained_symbols=retained_symbols,
         )
         artifact = self.publish(

@@ -15,6 +15,12 @@ import pyarrow.parquet as pq
 
 from quant_system.artifacts.envelope import hash_json
 from quant_system.artifacts.store import LocalArtifactStore
+from quant_system.data.ingestion.corporate_actions import (
+    cash_adjustment_factors,
+    cash_dividends,
+    restore_unadjusted_reference,
+    vendor_date,
+)
 from quant_system.data.ingestion.eastmoney import fetch_cash_dividends, fetch_company_master
 from quant_system.data.ingestion.tencent import fetch_index_history
 from quant_system.data.ingestion.tushare import (
@@ -30,98 +36,6 @@ from quant_system.domain.exceptions import QuantSystemError
 from quant_system.domain.types import bar_available_at, cn_dt
 
 DIVIDEND_FIELDS = "ts_code,ann_date,div_proc,stk_div,cash_div_tax,ex_date,pay_date"
-
-
-def vendor_date(value: str) -> date:
-    return datetime.strptime(value, "%Y%m%d").date()
-
-
-def _cash_dividends(
-    code: str,
-    rows: list[dict[str, Any]],
-    bars: list[dict[str, Any]],
-    start: date,
-    end: date,
-) -> tuple[dict[date, Decimal], list[dict[str, Any]]]:
-    cash_by_day: dict[date, Decimal] = {}
-    for row in rows:
-        if not row.get("ex_date") or row.get("div_proc") != "实施":
-            continue
-        ex_day = vendor_date(row["ex_date"])
-        if not start <= ex_day <= end:
-            continue
-        if Decimal(str(row.get("stk_div") or 0)) != 0:
-            raise QuantSystemError(f"stock distribution unsupported in baseline V1: {code}")
-        cash = Decimal(str(row.get("cash_div_tax") or 0))
-        if cash <= 0 or not row.get("ann_date") or vendor_date(row["ann_date"]) >= ex_day:
-            raise QuantSystemError(f"invalid dividend availability: {code}/{ex_day}")
-        if ex_day in cash_by_day and cash_by_day[ex_day] != cash:
-            raise QuantSystemError(f"conflicting dividend records: {code}/{ex_day}")
-        cash_by_day[ex_day] = cash
-
-    reconciliations = []
-    for previous, current in zip(bars, bars[1:], strict=False):
-        day = current["trade_date"]
-        if day not in cash_by_day:
-            continue
-        announced = cash_by_day[day]
-        implied = Decimal(str(previous["close"])) - Decimal(str(current["prev_close"]))
-        discrepancy = abs(implied - announced)
-        if implied > 0 and discrepancy > Decimal("0.02"):
-            if discrepancy > min(Decimal("0.10"), announced * Decimal("0.01")):
-                raise QuantSystemError(f"dividend/ex-reference disagreement: {code}/{day}")
-            reconciliations.append(
-                {
-                    "symbol": code.replace(".SH", ".SSE"),
-                    "ex_date": day.isoformat(),
-                    "announced_cash": str(announced),
-                    "applied_cash": str(implied),
-                    "basis": "daily ex-reference implied cash; small implementation variation",
-                }
-            )
-            cash_by_day[day] = implied
-    return cash_by_day, reconciliations
-
-
-def _cash_adjustment_factors(
-    bars: list[dict[str, Any]],
-    cash_by_day: dict[date, Decimal],
-) -> dict[date, Decimal]:
-    cumulative = Decimal("1")
-    factors = {}
-    for index, bar in enumerate(bars):
-        day = bar["trade_date"]
-        if day in cash_by_day:
-            if index == 0:
-                raise QuantSystemError("dividend on first dataset session lacks anchor")
-            previous_close = Decimal(str(bars[index - 1]["close"]))
-            cash = cash_by_day[day]
-            if previous_close <= cash:
-                raise QuantSystemError("invalid cash adjustment ratio")
-            cumulative *= previous_close / (previous_close - cash)
-        factors[day] = cumulative
-    return factors
-
-
-def _restore_unadjusted_reference(
-    code: str,
-    bars: list[dict[str, Any]],
-    cash_by_day: dict[date, Decimal],
-    factors: dict[date, Decimal],
-) -> None:
-    for previous, current in zip(bars, bars[1:], strict=False):
-        day = current["trade_date"]
-        raw_previous = Decimal(str(previous["close"]))
-        vendor_reference = Decimal(str(current["prev_close"]))
-        cash = cash_by_day.get(day, Decimal("0"))
-        if min(abs(vendor_reference - raw_previous), abs(vendor_reference - (raw_previous - cash))) > Decimal(
-            "0.02"
-        ):
-            raise QuantSystemError(f"unexplained ex-price adjustment: {code}/{day}")
-        if factors[day] != factors[previous["trade_date"]]:
-            if day not in cash_by_day:
-                raise QuantSystemError(f"unexplained adjustment jump: {code}/{day}")
-            current["prev_close"] = previous["close"]
 
 
 class BaselineDatasetBuilder:
@@ -269,7 +183,7 @@ class BaselineDatasetBuilder:
                 if dividend_source == "tushare"
                 else [row for row in public_dividends if row["ts_code"] == code]
             )
-            cash_by_day, dividend_audit = _cash_dividends(code, dividend_rows, normalized, start, end)
+            cash_by_day, dividend_audit = cash_dividends(code, dividend_rows, normalized, start, end)
             reconciliations.extend(dividend_audit)
             for ex_day, cash in sorted(cash_by_day.items()):
                 actions.append(
@@ -290,7 +204,7 @@ class BaselineDatasetBuilder:
                 if len(by_day) != len(raw_factors) or not bar_days.issubset(by_day):
                     raise QuantSystemError(f"missing or duplicated adjustment history: {code}")
             else:
-                by_day = _cash_adjustment_factors(normalized, cash_by_day)
+                by_day = cash_adjustment_factors(normalized, cash_by_day)
             factors.extend(
                 {
                     "symbol": symbol,
@@ -300,7 +214,7 @@ class BaselineDatasetBuilder:
                 }
                 for day in sorted(bar_days)
             )
-            _restore_unadjusted_reference(code, normalized, cash_by_day, by_day)
+            restore_unadjusted_reference(code, normalized, cash_by_day, by_day)
             for day in sorted(set(days) - bar_days):
                 statuses.append(
                     {

@@ -35,7 +35,7 @@ from quant_system.domain.types import bar_available_at, new_id
 from quant_system.factors.dsl import FactorExpression, FactorExpressionError
 from quant_system.factors.evaluation import FactorLab, FactorRun
 from quant_system.research.experiments import Experiment, ExperimentRun, ExperimentService
-from quant_system.research.runtime.calls import BudgetLedger, BudgetLimits, CallReceipt, StructuredCaller
+from quant_system.research.runtime.calls import StructuredCaller
 from quant_system.research.runtime.engine import RunContext
 from quant_system.research.runtime.models import EvidenceRef
 
@@ -235,32 +235,24 @@ class AgentResearchOrchestrator:
             self._snapshots = DataSnapshotService(store, registry)
         self._factor_lab_factory = factor_lab_factory
 
-    def run(self, request: AgentResearchRequest, *, context: RunContext | None = None) -> AgentResearchResult:
+    def run(self, request: AgentResearchRequest, *, context: RunContext) -> AgentResearchResult:
         if request.start_date >= request.end_date:
             raise QuantSystemError("start_date must be before end_date")
         if self._config.research_budget.max_llm_calls_per_run < 4:
             raise QuantSystemError("research budget requires at least four LLM calls")
-        if context is not None and self._store is None:
+        if self._store is None:
             raise QuantSystemError("runtime factor research requires an artifact store for reports")
-        if context is not None:
-            context.check()
+        context.check()
         factor_input = self._resolve_factor_input(request)
         factor_lab = self._resolve_factor_lab(request, factor_input)
 
         trace_id = new_id("atrace_")
-        if context is None:
-            ledger, caller = self._standalone_calls(trace_id)
-        else:
-            ledger, caller = context.ledger, context.caller
+        ledger, caller = context.ledger, context.caller
         if not ledger.can_afford(4):
             ledger.check()
             raise QuantSystemError("research LLM call budget exceeded; factor research requires four calls")
 
-        def advance(stage: str) -> None:
-            if context is not None:
-                context.advance(stage)
-            else:
-                ledger.check()
+        advance = context.advance
 
         experiment = self._experiments.create(
             request.topic,
@@ -268,14 +260,13 @@ class AgentResearchOrchestrator:
             metadata={"trace_id": trace_id, "request": request.model_dump(mode="json")},
         )
         try:
-            if request.data_snapshot_id is not None and context is not None:
+            if request.data_snapshot_id is not None:
                 context.evidence(self.snapshot_evidence(request.data_snapshot_id))
             advance("candidate")
             candidate = self._call(
                 "researcher",
                 FactorCandidate,
                 self._researcher_messages(request),
-                caller,
                 context,
             )
             try:
@@ -285,7 +276,6 @@ class AgentResearchOrchestrator:
                     "researcher",
                     FactorCandidate,
                     self._researcher_repair_messages(request, candidate, str(exc)),
-                    caller,
                     context,
                 )
                 FactorExpression(candidate.expression)
@@ -342,15 +332,12 @@ class AgentResearchOrchestrator:
                     raise QuantSystemError("research LLM call budget exceeded")
                 raise QuantSystemError("research token budget exceeded")
             with ThreadPoolExecutor(max_workers=2) as pool:
-                critic_future = pool.submit(
-                    self._call, "critic", CriticReview, critic_messages, caller, context
-                )
+                critic_future = pool.submit(self._call, "critic", CriticReview, critic_messages, context)
                 statistician_future = pool.submit(
                     self._call,
                     "statistician",
                     StatisticalReview,
                     statistician_messages,
-                    caller,
                     context,
                 )
                 critic = critic_future.result()
@@ -361,7 +348,6 @@ class AgentResearchOrchestrator:
                 "orchestrator",
                 OrchestratorDecision,
                 self._orchestrator_messages(candidate, critic, statistician, local_gates),
-                caller,
                 context,
             )
             role_order = {
@@ -401,9 +387,9 @@ class AgentResearchOrchestrator:
                 decision=decision,
                 local_gates=local_gates,
                 calls=calls,
-                call_receipts=self._receipt_metadata(trace_id, caller, context),
+                call_receipts=self._receipt_metadata(caller, context),
                 usage=ledger.usage(),
-                runtime_run_id=context.run_id if context is not None else None,
+                runtime_run_id=context.run_id,
             )
             recorded = self._experiments.record_run(
                 experiment.experiment_id,
@@ -450,7 +436,7 @@ class AgentResearchOrchestrator:
                 metrics={
                     "error": str(exc)[:1000],
                     "usage": ledger.usage(),
-                    "call_receipts": self._receipt_metadata(trace_id, caller, context, persist=False),
+                    "call_receipts": self._receipt_metadata(caller, context),
                 },
             )
             if isinstance(exc, QuantSystemError):
@@ -462,63 +448,26 @@ class AgentResearchOrchestrator:
         role: AgentRoleName,
         model: type[StructuredModel],
         messages: list[LLMMessage],
-        caller: StructuredCaller,
-        context: RunContext | None,
+        context: RunContext,
     ) -> StructuredModel:
-        if context is not None:
-            return context.call(role, messages, model, purpose=f"factor.{role}")
-        return caller.call(role, messages, model, purpose=f"factor.{role}")
+        return context.call(role, messages, model, purpose=f"factor.{role}")
 
     def _token_limits(self, role: AgentRoleName, messages: list[LLMMessage]) -> tuple[int, int]:
         _, route = self._config.route(role)
         serialized = json.dumps([message.model_dump(mode="json") for message in messages], ensure_ascii=False)
         return len(serialized.encode("utf-8")) + 256, route.max_output_tokens
 
-    def _standalone_calls(self, trace_id: str) -> tuple[BudgetLedger, StructuredCaller]:
-        ledger = BudgetLedger(
-            BudgetLimits(
-                max_calls=min(30, self._config.research_budget.max_llm_calls_per_run),
-                max_tokens=self._config.research_budget.max_total_tokens_per_run,
-            )
-        )
-
-        def sink(receipt: CallReceipt) -> None:
-            self._persist_receipt(trace_id, receipt)
-
-        return ledger, StructuredCaller(
-            self._config, self._gateway, ledger, sink=sink if self._store is not None else None
-        )
-
-    def _persist_receipt(self, trace_id: str, receipt: CallReceipt) -> dict[str, Any]:
-        if self._store is None:
-            return receipt.model_dump(mode="json")
-        uri, digest = self._store.put_content_addressed_json(
-            f"research/factor/calls/{trace_id}/{receipt.call_id}", receipt.model_dump(mode="json")
-        )
-        return {
-            "call_id": receipt.call_id,
-            "sequence": receipt.sequence,
-            "status": receipt.status,
-            "uri": uri,
-            "content_hash": digest,
-        }
-
-    def _receipt_metadata(
-        self, trace_id: str, caller: StructuredCaller, context: RunContext | None, *, persist: bool = True
-    ) -> list[dict[str, Any]]:
-        if context is not None:
-            return [
-                {
-                    "run_id": context.run_id,
-                    "call_id": f"{context.run_id}:{receipt.call_id}",
-                    "sequence": receipt.sequence,
-                    "status": receipt.status,
-                }
-                for receipt in caller.receipts
-            ]
-        if not persist:
-            return [receipt.model_dump(mode="json") for receipt in caller.receipts]
-        return [self._persist_receipt(trace_id, receipt) for receipt in caller.receipts]
+    @staticmethod
+    def _receipt_metadata(caller: StructuredCaller, context: RunContext) -> list[dict[str, Any]]:
+        return [
+            {
+                "run_id": context.run_id,
+                "call_id": f"{context.run_id}:{receipt.call_id}",
+                "sequence": receipt.sequence,
+                "status": receipt.status,
+            }
+            for receipt in caller.receipts
+        ]
 
     def _resolve_factor_input(self, request: AgentResearchRequest) -> BoundFactorInput | None:
         if request.data_snapshot_id is None:
